@@ -35,6 +35,7 @@ TEMPLATES = {
     "ready": "images/ready_button.png",
     "retire": "images/retire.png",
     "okay": "images/okay.png",
+    "closed_room_coop_quest_menu": "images/closed_room_coop_quest_menu.png",
     "tap1": "images/tap1.png",
     "tap2": "images/tap2.png",
     "retry": "images/retry.png",
@@ -408,6 +409,20 @@ if __name__ == "__main__":
                 except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
                     pass
                 
+                # Check for room closure popup (owner closed room)
+                try:
+                    room_closed = pyautogui.locateCenterOnScreen(
+                        TEMPLATES['closed_room_coop_quest_menu'], region=region, confidence=0.8)
+                    if room_closed:
+                        print(f"[RUN {run_count + 1}] [ERROR] Room closed by owner after {elapsed:.1f}s")
+                        simple_click(room_closed[0], room_closed[1], "room closed popup")
+                        time.sleep(1)
+                        print(f"[RUN {run_count + 1}] [RECOVERY] Room closed - restarting from menu")
+                        state = "MENU"
+                        break
+                except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+                    pass
+                
                 # Check for any disconnect popup (network/room owner) - both use close button
                 try:
                     close_btn = pyautogui.locateCenterOnScreen(
@@ -445,6 +460,11 @@ if __name__ == "__main__":
                         # Click okay to confirm retirement
                         print(f"[RUN {run_count + 1}] [RETIRE] Looking for okay confirmation button...")
                         poll_and_click("okay", region, timeout=10, run_count=run_count, description="okay confirmation")
+                        time.sleep(1)
+                        
+                        # Click final confirmation popup (closed_room_coop_quest_menu)
+                        print(f"[RUN {run_count + 1}] [RETIRE] Looking for final confirmation popup...")
+                        poll_and_click("closed_room_coop_quest_menu", region, timeout=10, run_count=run_count, description="final retire confirmation")
                         time.sleep(1)
                         
                         print(f"[RUN {run_count + 1}] [RECOVERY] Retired from room - restarting from menu")
