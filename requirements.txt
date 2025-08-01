@@ -1,1 +1,4 @@
-pyautogui>=0.9.50
+pyautogui>=0.9.54
+
+# Development dependencies
+ruff>=0.12.7

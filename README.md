@@ -47,4 +47,10 @@ Create these template images in `images/` folder:
 - `tap1.png`, `tap2.png` - Quest completion taps
 - `retry.png` - Retry button
 
-Bot finds AUTO rooms with valid rules, handles disconnects, and loops automatically.
+Bot finds AUTO rooms with valid rules, handles disconnects, room closures, and loops automatically.
+
+## Known Issues
+
+- **Focus stealing**: Bot steals window focus during clicks, disrupting work
+- **Input interference**: Typing/mouse movement during bot actions can break clicks
+- **Solutions in progress**: Input buffering or virtual display separation
