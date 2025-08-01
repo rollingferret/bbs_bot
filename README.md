@@ -40,6 +40,7 @@ Create these template images in `images/` folder:
 - `close.png` - Blue close/resume button
 - `ready_button.png` - Ready button
 - `retire.png` - Retire button
+- `okay.png` - Okay confirmation button
 - `ingame_auto_off.png` - In-game auto OFF
 - `ingame_auto_on.png` - In-game auto ON
 - `tap1.png`, `tap2.png` - Quest completion taps

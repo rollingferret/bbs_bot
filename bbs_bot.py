@@ -34,6 +34,7 @@ TEMPLATES = {
     "close": "images/close.png",
     "ready": "images/ready_button.png",
     "retire": "images/retire.png",
+    "okay": "images/okay.png",
     "tap1": "images/tap1.png",
     "tap2": "images/tap2.png",
     "retry": "images/retry.png",
@@ -439,7 +440,13 @@ if __name__ == "__main__":
                     if retire_btn:
                         print(f"[RUN {run_count + 1}] [RETIRE] Clicking retire button to leave room")
                         simple_click(retire_btn[0], retire_btn[1], "retire button")
-                        time.sleep(2)
+                        time.sleep(1)
+                        
+                        # Click okay to confirm retirement
+                        print(f"[RUN {run_count + 1}] [RETIRE] Looking for okay confirmation button...")
+                        poll_and_click("okay", region, timeout=10, run_count=run_count, description="okay confirmation")
+                        time.sleep(1)
+                        
                         print(f"[RUN {run_count + 1}] [RECOVERY] Retired from room - restarting from menu")
                         state = "MENU"
                     else:
