@@ -1,0 +1,34 @@
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# Claude Code assistant context
+CLAUDE.md
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Screenshots (bot saves failure screenshots here)
+screenshots/
+
+# Personal config/notes
+config.local
+*.local
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

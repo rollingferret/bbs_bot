@@ -15,7 +15,7 @@ ROOM_LOAD_TIMEOUT = 5  # Max time to wait for room list to load with AUTO icons
 ROOM_LOAD_DELAY = 1  # Extra delay for room list to become clickable after loading
 LOBBY_LOAD_DELAY = 6  # Time to wait for lobby to fully load after joining room
 ROOM_JOIN_CHECK_DELAY = (
-    1  # How long to wait before checking if room join succeeded/failed
+    1.5  # How long to wait before checking if room join succeeded/failed
 )
 
 # === QUEST EXECUTION TIMEOUTS ===
@@ -30,7 +30,7 @@ MAX_RULE_DISTANCE = 100  # Max pixel distance to match AUTO icon with Room Rules
 # === UI INTERACTION DELAYS ===
 POPUP_DISMISS_DELAY = 2.0  # Wait after dismissing error/info popups
 SEARCH_AGAIN_DELAY = 1.5  # Wait after clicking search again before re-scanning
-TAP_PAUSE_DELAY = 1.0  # Pause between quest completion tap buttons
+TAP_PAUSE_DELAY = 5.0  # Pause between quest completion tap buttons
 SCREEN_TRANSITION_DELAY = 2.0  # Wait for screen transitions (tap2 → retry screen)
 RETRY_PAUSE_DELAY = 0.5  # Brief pause after clicking retry button
 
@@ -283,9 +283,11 @@ def match_autos_with_rules(autos, rules, run_count):
             log_run(
                 run_count,
                 "MATCH",
-                f"✅ AUTO {i + 1} matched with Rule at ({rule_x}, {rule_y})",
+                f"✅ AUTO {i + 1} matched with Rule at ({rule_x}, {rule_y}) - stopping search",
             )
             valid_rooms.append((auto, closest_rule))
+            # Return immediately after finding first valid room for speed
+            return valid_rooms
         else:
             log_run(
                 run_count, "MATCH", f"❌ AUTO {i + 1} - no matching Room Rules found"
@@ -294,7 +296,7 @@ def match_autos_with_rules(autos, rules, run_count):
     return valid_rooms
 
 
-def deduplicate_auto_icons(matches, min_distance=40):
+def deduplicate_auto_icons(matches, min_distance=60):
     """Remove overlapping AUTO icon detections that are too close together"""
     if not matches:
         return []
@@ -647,23 +649,27 @@ if __name__ == "__main__":
             while time.time() - start_time < CHECK_RUN_START_TIMEOUT:
                 elapsed = time.time() - start_time
 
-                # Check for ingame auto off (should appear first)
+                # Check for ingame auto off (should appear first) - loose threshold to catch it
                 try:
                     auto_off_box = pyautogui.locateOnScreen(
-                        TEMPLATES["ingame_auto_off"], region=region, confidence=0.8
+                        TEMPLATES["ingame_auto_off"], region=region, confidence=0.7
                     )
                     if auto_off_box:
                         print(
                             f"[RUN {run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - clicking to turn ON!"
                         )
+                        # Extra stability delay for auto button
+                        time.sleep(0.3)
                         # Use proper polling click for consistency
                         time.sleep(TEMPLATE_FOUND_DELAY)
-                        random_x = random.randint(
-                            auto_off_box.left, auto_off_box.left + auto_off_box.width - 1
-                        )
-                        random_y = random.randint(
-                            auto_off_box.top, auto_off_box.top + auto_off_box.height - 1
-                        )
+                        # Click near center of auto button (avoid edges for circular buttons)
+                        center_x = auto_off_box.left + auto_off_box.width // 2
+                        center_y = auto_off_box.top + auto_off_box.height // 2
+                        # Small random offset from center (within 30% of template size)
+                        offset_x = random.randint(-auto_off_box.width // 6, auto_off_box.width // 6)
+                        offset_y = random.randint(-auto_off_box.height // 6, auto_off_box.height // 6)
+                        random_x = center_x + offset_x
+                        random_y = center_y + offset_y
                         simple_click(random_x, random_y, "ingame auto off")
                         run_started = True
                         auto_found = True
@@ -675,10 +681,10 @@ if __name__ == "__main__":
                 ):
                     pass
 
-                # Also check for auto on (in case it was already enabled)
+                # Also check for auto on (in case it was already enabled) - strict threshold
                 try:
                     auto_on_box = pyautogui.locateOnScreen(
-                        TEMPLATES["ingame_auto_on"], region=region, confidence=0.8
+                        TEMPLATES["ingame_auto_on"], region=region, confidence=0.95
                     )
                     if auto_on_box:
                         print(
@@ -910,26 +916,77 @@ if __name__ == "__main__":
 
         elif state == "FINISH":
             log_run(run_count, "STATE", "FINISH")
-            # Steps 8–9: tap to continue twice
+            # Steps 8–9: tap to continue twice (center-focused clicking)
             log_run(run_count, "STEP", "8 - First tap to continue")
-            poll_and_click(
-                "tap1",
-                region,
-                timeout=15,
-                run_count=run_count,
-                description="first tap button",
-            )
+            
+            # Custom tap1 clicking with center focus
+            start_time = time.time()
+            tap1_clicked = False
+            while time.time() - start_time < 15 and not tap1_clicked:
+                try:
+                    tap1_box = pyautogui.locateOnScreen(
+                        TEMPLATES["tap1"], region=region, confidence=0.8
+                    )
+                    if tap1_box:
+                        time.sleep(TEMPLATE_FOUND_DELAY)
+                        # Click near center of tap1 button
+                        center_x = tap1_box.left + tap1_box.width // 2
+                        center_y = tap1_box.top + tap1_box.height // 2
+                        offset_x = random.randint(-tap1_box.width // 6, tap1_box.width // 6)
+                        offset_y = random.randint(-tap1_box.height // 6, tap1_box.height // 6)
+                        random_x = center_x + offset_x
+                        random_y = center_y + offset_y
+                        simple_click(random_x, random_y, "first tap button")
+                        print(f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s")
+                        tap1_clicked = True
+                        break
+                except (
+                    pyscreeze.ImageNotFoundException,
+                    OSError,
+                    pyautogui.ImageNotFoundException,
+                ):
+                    pass
+                time.sleep(0.5)
+            
+            if not tap1_clicked:
+                screenshot_and_exit(region, "timeout_tap1", run_count)
+                
             log_run(run_count, "WAIT", "Brief pause after first tap...")
             time.sleep(TAP_PAUSE_DELAY)
 
             log_run(run_count, "STEP", "9 - Second tap to continue")
-            poll_and_click(
-                "tap2",
-                region,
-                timeout=10,
-                run_count=run_count,
-                description="second tap button",
-            )
+            
+            # Custom tap2 clicking with center focus
+            start_time = time.time()
+            tap2_clicked = False
+            while time.time() - start_time < 20 and not tap2_clicked:
+                try:
+                    tap2_box = pyautogui.locateOnScreen(
+                        TEMPLATES["tap2"], region=region, confidence=0.8
+                    )
+                    if tap2_box:
+                        time.sleep(TEMPLATE_FOUND_DELAY)
+                        # Click near center of tap2 button
+                        center_x = tap2_box.left + tap2_box.width // 2
+                        center_y = tap2_box.top + tap2_box.height // 2
+                        offset_x = random.randint(-tap2_box.width // 6, tap2_box.width // 6)
+                        offset_y = random.randint(-tap2_box.height // 6, tap2_box.height // 6)
+                        random_x = center_x + offset_x
+                        random_y = center_y + offset_y
+                        simple_click(random_x, random_y, "second tap button")
+                        print(f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s")
+                        tap2_clicked = True
+                        break
+                except (
+                    pyscreeze.ImageNotFoundException,
+                    OSError,
+                    pyautogui.ImageNotFoundException,
+                ):
+                    pass
+                time.sleep(0.5)
+            
+            if not tap2_clicked:
+                screenshot_and_exit(region, "timeout_tap2", run_count)
             log_run(
                 run_count, "WAIT", "Waiting for screen transition after second tap..."
             )
