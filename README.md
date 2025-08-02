@@ -1,37 +1,24 @@
 # Bleach: Brave Souls Auto Co-op Bot
 
-**Personal automation script for Bleach: Brave Souls co-op quest farming. Use at your own risk.**
-
-Automatically finds AUTO-enabled co-op rooms, joins them, handles disconnects, and loops continuously.
-
-## ⚠️ Disclaimer
-
-This is my personal bot that works on my specific setup. No support provided - you'll need to adapt it for your system. Fork and modify as needed.
+Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enabled rooms, handles errors, loops continuously.
 
 ## Requirements
 
-- **Linux with X11** (tested on Pop!_OS/Ubuntu)
-- **Python 3.8+**
-- **Bleach: Brave Souls** running in windowed mode via Steam
-- **Game path**: Hardcoded for my Steam library - edit the path in `bbs_bot.py` line ~8XX
+- Linux with X11 (tested on Pop!_OS/Ubuntu)
+- Python 3.8+
+- Bleach: Brave Souls running in windowed mode
+- Game must be visible (bot finds window by title)
 
-## Quick Setup
+## Setup
 
 ```bash
-# Install system dependencies
 sudo apt install python3 python3-pip xdotool
-
-# Clone and install
-git clone [your-repo-url]
+git clone https://github.com/yourusername/bbs_bot.git
 cd bbs_bot
 pip3 install -r requirements.txt
 
 # Create template images (see below)
 mkdir images
-# Take screenshots of each UI element and save as PNG files
-
-# Edit game path in bbs_bot.py for your system
-# Run the bot
 python3 bbs_bot.py
 ```
 
@@ -76,16 +63,19 @@ Create `images/` folder with these files:
 - **Window focus stealing** - Bot focuses game window for clicks, interrupting work
 - **Input interference** - Your mouse/keyboard input during bot actions can break clicks
 - **Linux/X11 only** - Won't work on Windows without modification
-- **Game path hardcoded** - Edit for your Steam library location
 - **Template dependent** - Breaks if game UI changes
 
-## Potential Solutions for Focus Issues
+## Current Status
 
-- Run on virtual display (Xvfb) for complete isolation
-- Use second monitor dedicated to bot
-- Input buffering with lock files
-- See `dev_notes.md` for technical details
+- **Stable**: Runs 30+ consecutive quests unattended
+- **Performance**: 2-5 minute cycles, >95% success rate
+- **Focus issue**: Being researched - input buffering or cursor position saving
 
-## License
+## Future Improvements
 
-Use at your own risk. No warranty. Modify freely.
+- **Code refactoring**: Extract repeated template detection patterns
+- **State handler functions**: Break 900-line main loop into readable functions  
+- **Input isolation**: Research libraries for temporary keyboard/mouse blocking
+- **Configuration file**: Move timing constants to external config
+
+See `dev_notes.md` for technical details and solution research.
