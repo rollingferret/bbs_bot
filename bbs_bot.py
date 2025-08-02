@@ -149,9 +149,9 @@ def simple_click(x, y, description="element"):
     # Focus and raise game window, then click immediately (no delay window)  
     focus_game_window()
     
-    # Disable keyboard right before clicking to prevent typing interference (keystrokes lost)
+    # Disable keyboard and mouse right before clicking to prevent interference (input lost)
     if BUFFER_INPUT_DURING_CLICKS:
-        disable_keyboard_input()
+        disable_input_devices()
     
     # Click at the provided coordinates (already randomized by poll_and_click)
     # No print during critical interference window for maximum speed
@@ -163,9 +163,9 @@ def simple_click(x, y, description="element"):
         # Restore original pause setting
         pyautogui.PAUSE = original_pause
     
-    # Re-enable keyboard AFTER focus restore
+    # Re-enable keyboard and mouse AFTER focus restore
     if BUFFER_INPUT_DURING_CLICKS:
-        enable_keyboard_input()
+        enable_input_devices()
         
     # Log after everything complete to avoid I/O during interference window
     if RESTORE_FOCUS_AND_MOUSE:
@@ -214,38 +214,52 @@ def restore_focus_and_mouse(original_focus, original_mouse_pos):
         print(f"[RESTORE] Failed to restore focus/mouse: {e}")
 
 
-def get_keyboard_device_id():
-    """Get keyboard device ID for xinput control (prevents typing interference, doesn't buffer)"""
+def get_input_device_ids():
+    """Get keyboard and mouse device IDs for xinput control"""
+    keyboard_id, mouse_id = None, None
     try:
         result = subprocess.check_output(["xinput", "list"], text=True)
         for line in result.split('\n'):
-            if 'id=' in line and 'keyboard' in line.lower():
+            if 'id=' in line:
                 # Extract id=XX from line
                 start = line.find('id=') + 3
                 end = line.find('\t', start) if '\t' in line[start:] else len(line)
                 device_id = line[start:end].strip()
                 if device_id.isdigit():
-                    return device_id
-        return None
+                    if 'keyboard' in line.lower() and not keyboard_id:
+                        keyboard_id = device_id
+                    elif ('mouse' in line.lower() or 'pointer' in line.lower()) and 'XTEST' not in line and not mouse_id:
+                        mouse_id = device_id
+        return keyboard_id, mouse_id
     except Exception as e:
-        print(f"[INPUT] Failed to get keyboard device ID: {e}")
-        return None
+        print(f"[INPUT] Failed to get input device IDs: {e}")
+        return None, None
 
 
-def disable_keyboard_input():
-    """Temporarily disable keyboard input (prevents typing interference, keystrokes are lost)"""
+def disable_input_devices():
+    """Temporarily disable keyboard and mouse input (prevents interference, input is lost)"""
     if keyboard_device_id:
         try:
             subprocess.run(["xinput", "disable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
         except Exception:
             pass
+    if mouse_device_id:
+        try:
+            subprocess.run(["xinput", "disable", mouse_device_id], check=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
 
 
-def enable_keyboard_input():
-    """Re-enable keyboard input (WARNING: keystrokes typed during disable are lost)"""
+def enable_input_devices():
+    """Re-enable keyboard and mouse input (WARNING: input typed during disable is lost)"""
     if keyboard_device_id:
         try:
             subprocess.run(["xinput", "enable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+    if mouse_device_id:
+        try:
+            subprocess.run(["xinput", "enable", mouse_device_id], check=True, stderr=subprocess.DEVNULL)
         except Exception:
             pass
 
@@ -460,15 +474,18 @@ if __name__ == "__main__":
     region, win_id = get_game_region()
     print(f"DEBUG region = {region}")
     
-    # Set up keyboard device ID for input blocking if enabled
-    keyboard_device_id = None
+    # Set up input device IDs for blocking if enabled
+    keyboard_device_id, mouse_device_id = None, None
     if BUFFER_INPUT_DURING_CLICKS:
-        keyboard_device_id = get_keyboard_device_id()
+        keyboard_device_id, mouse_device_id = get_input_device_ids()
         if keyboard_device_id:
             print(f"[INPUT] Found keyboard device ID: {keyboard_device_id}")
-            print(f"[INPUT] WARNING: Keystrokes during clicks will be lost (xinput doesn't buffer)")
+        if mouse_device_id:
+            print(f"[INPUT] Found mouse device ID: {mouse_device_id}")
+        if keyboard_device_id or mouse_device_id:
+            print(f"[INPUT] WARNING: Input during clicks will be lost (xinput blocks, doesn't buffer)")
         else:
-            print(f"[INPUT] No keyboard device found - input blocking disabled")
+            print(f"[INPUT] No input devices found - input blocking disabled")
     
     # Set up wmctrl window management if enabled
     if USE_WMCTRL_ALWAYS_ON_TOP:
