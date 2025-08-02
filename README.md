@@ -31,16 +31,15 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Create template images (see below)
-mkdir images
+# Template images included for current event
 python3 bbs_bot.py
 ```
 
-## Template Images Required
+## Template Images
 
-**You must create these yourself by taking screenshots:**
+**Included for 10 Coop Anniversary Event:**
 
-Create `images/` folder with these files:
+The `images/` folder contains pre-made templates for the current event:
 - `coop_quest.png` - Main co-op quest button
 - `open_coop_quest.png` - Specific quest selection button  
 - `join_coop_quest.png` - "Join" button to enter room list
@@ -57,11 +56,12 @@ Create `images/` folder with these files:
 - `tap1.png`, `tap2.png` - Quest completion continue buttons
 - `retry.png` - Retry button after quest
 
-**How to create templates:**
+**For Other Events:**
+If the UI changes for future events, you'll need to update template images:
 1. Run the game in windowed mode
-2. Take screenshots of each UI element using your screenshot tool
-3. Crop to just the button/icon (tight crop)
-4. Save as PNG in `images/` folder with exact names above
+2. Take screenshots of changed UI elements
+3. Crop to just the button/icon (tight crop)  
+4. Replace the corresponding PNG files in `images/` folder
 
 ## How It Works
 
@@ -76,12 +76,14 @@ Create `images/` folder with these files:
 
 The bot has several configurable options at the top of `bbs_bot.py`:
 
-### Focus Restoration (NEW!)
+### Clicking Method
 ```python
-RESTORE_FOCUS_AND_MOUSE = False  # Set to True to reduce focus stealing
+USE_X11_DIRECT_CLICKS = True  # X11 direct window clicks (minimal focus stealing)
+USE_WMCTRL_ALWAYS_ON_TOP = True  # Keep game window always visible
+FOCUS_RESTORE_DELAY = 0.03  # Ultra-fast focus restoration timing
 ```
-- **True**: Bot restores your window focus and mouse position after each click (less disruptive)
-- **False**: Bot leaves focus on game window (better performance, more disruptive)
+- **X11 Mode**: Direct window clicks with 30ms focus restoration for minimal interference
+- **PyAutoGUI Mode**: Traditional clicking that requires window focus
 
 ### Timing Constants
 - `INGAME_AUTO_STABILITY_DELAY = 0.5` - Extra delay before clicking ingame auto button
@@ -91,24 +93,22 @@ RESTORE_FOCUS_AND_MOUSE = False  # Set to True to reduce focus stealing
 
 ## Known Issues
 
-- **Focus stealing** - Bot must focus game window for reliable clicking. Use `RESTORE_FOCUS_AND_MOUSE = True` to minimize disruption
-- **Typing interference** - When bot steals focus, your keystrokes may go to game instead of terminal
 - **Linux/X11 only** - Won't work on Windows without modification  
 - **Template dependent** - Breaks if game UI changes
+- **XTEST dependency** - Requires X11 XTEST extension (standard on most Linux systems)
 
 ## Current Status
 
-- **Stable**: Runs 30+ consecutive quests unattended
+- **Stable**: Runs 30+ consecutive quests unattended  
 - **Performance**: 2-5 minute cycles, >95% success rate
-- **Focus restoration**: NEW atomic timing minimizes keystroke interference to ~0.05s windows
+- **Ultra-Low Interference**: 30ms focus disruption window for minimal keystroke loss
 
 ## Recent Updates
 
-- ✅ **Focus restoration system** - Optional window focus and mouse position restoration
-- ✅ **Atomic timing optimization** - Minimized interference window to ~0.05s during clicks
-- ✅ **Performance improvements** - Combined xdotool calls, reduced subprocess overhead
-- ✅ **Configurable ingame auto delay** - Improved reliability for auto button clicking
-- ✅ **Virtual environment support** - Clean dependency management
+- ✅ **X11 Direct Clicking** - Fast window clicks with minimal focus interference
+- ✅ **Automatic Focus Restoration** - Keeps your terminal/IDE focused while bot runs
+- ✅ **GNOME/Pop!_OS Compatibility** - Optimized timing for modern Linux desktops
+- ✅ **Minimal Dependencies** - Cleaned up to only essential libraries
 
 ## Future Improvements
 

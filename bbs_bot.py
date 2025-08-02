@@ -6,6 +6,7 @@ import random
 
 import pyautogui
 import pyscreeze
+from Xlib import X, display
 
 # --- CONFIGURATION ---
 GAME_WINDOW_TITLE = "Bleach: Brave Souls"
@@ -47,20 +48,22 @@ FINAL_PAUSE_DELAY = 0.5        # Brief final pause before next cycle
 pyautogui.FAILSAFE = False  # Disable mouse-corner failsafe (use Ctrl+C instead)
 pyautogui.PAUSE = 0.1  # Global delay after every pyautogui action (reduced for speed)
 
-# === FOCUS RESTORATION ===
-RESTORE_FOCUS_AND_MOUSE = True  # Set to False to disable focus/mouse restoration (better performance, more disruptive)
 
 # === WINDOW MANAGEMENT ===
 USE_WMCTRL_ALWAYS_ON_TOP = True  # Set to True to make game window sticky and always on top (works across workspaces)
 
-# === INPUT BUFFERING ===
-BUFFER_INPUT_DURING_CLICKS = True  # Set to True to disable keyboard/mouse during clicks (prevents input interference)
+
+# === CLICKING METHOD ===
+USE_X11_DIRECT_CLICKS = True  # Set to True to use X11 direct window clicks (no focus stealing) vs pyautogui (needs focus)
 
 # === TEMPLATE MATCHING ===
 TEMPLATE_FOUND_DELAY = (
     0.2  # Small delay after finding template before clicking (stability)
 )
 INGAME_AUTO_STABILITY_DELAY = 0.5  # Extra delay before clicking ingame auto button
+
+# === FOCUS MANAGEMENT ===
+FOCUS_RESTORE_DELAY = 0.03  # Delay before focus restoration after X11 click
 
 TEMPLATES = {
     "coop_quest": "images/coop_quest.png",
@@ -130,138 +133,98 @@ def screenshot_and_exit(region, tag, run_count=None):
 
 
 def simple_click(x, y, description="element"):
-    """Simple pyautogui click with optional focus/mouse restoration"""
-    # Add random delay BEFORE focusing (human-like timing, no interference)
-    random_delay = random.uniform(0.1, 0.4)
-    time.sleep(random_delay)
+    """X11 click with immediate focus reclaim"""
     
-    # Capture current focus and mouse position for restoration (if enabled)
-    original_focus, original_mouse_pos = None, None
-    if RESTORE_FOCUS_AND_MOUSE:
-        original_focus, original_mouse_pos = get_current_focus_and_mouse()
-    
-    # Make focus→click→restore atomic (no delays) to minimize interference time
-    if RESTORE_FOCUS_AND_MOUSE:
-        # Save original pause setting
-        original_pause = pyautogui.PAUSE
-        pyautogui.PAUSE = 0  # Remove all pyautogui delays during critical section
-    
-    # Focus and raise game window, then click immediately (no delay window)  
-    focus_game_window()
-    
-    # Disable keyboard and mouse right before clicking to prevent interference (input lost)
-    if BUFFER_INPUT_DURING_CLICKS:
-        disable_input_devices()
-    
-    # Click at the provided coordinates (already randomized by poll_and_click)
-    # No print during critical interference window for maximum speed
-    pyautogui.click(x, y)
-    
-    # Restore original focus and mouse position IMMEDIATELY to minimize interference
-    if RESTORE_FOCUS_AND_MOUSE:
-        restore_focus_and_mouse(original_focus, original_mouse_pos)
-        # Restore original pause setting
-        pyautogui.PAUSE = original_pause
-    
-    # Re-enable keyboard and mouse AFTER focus restore
-    if BUFFER_INPUT_DURING_CLICKS:
-        enable_input_devices()
-        
-    # Log after everything complete to avoid I/O during interference window
-    if RESTORE_FOCUS_AND_MOUSE:
-        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [restored focus + buffered input]")
-    elif BUFFER_INPUT_DURING_CLICKS:
-        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [buffered input]")
-    else:
-        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [basic click]")
-    
-    # No post-click delay - pyautogui.PAUSE=0.1 already handles this
-
-
-def get_current_focus_and_mouse():
-    """Capture current focused window and mouse position for restoration"""
-    try:
-        # Get currently focused window
-        current_focus = subprocess.check_output(
-            ["xdotool", "getwindowfocus"], text=True
-        ).strip()
-        
-        # Get current mouse position
-        mouse_pos = pyautogui.position()
-        
-        return current_focus, mouse_pos
-    except Exception as e:
-        print(f"[RESTORE] Failed to get current focus/mouse: {e}")
-        return None, None
-
-
-def restore_focus_and_mouse(original_focus, original_mouse_pos):
-    """Restore original window focus and mouse position (prioritize focus for speed)"""
-    try:
-        # Restore original window focus FIRST (most important for user)
-        if original_focus:
-            subprocess.run(
-                ["xdotool", "windowactivate", original_focus],
-                check=True,
-                stderr=subprocess.DEVNULL,
-            )
-        
-        # Restore mouse position SECOND (less critical)
-        if original_mouse_pos:
-            pyautogui.moveTo(original_mouse_pos.x, original_mouse_pos.y)
+    if USE_X11_DIRECT_CLICKS:
+        # Capture current window before click
+        current_window = None
+        window_name = "Unknown"
+        try:
+            current_window = subprocess.check_output(["xdotool", "getwindowfocus"], text=True).strip()
+            window_name = subprocess.check_output(["xdotool", "getwindowname", current_window], text=True).strip()
+            print(f"[FOCUS] Before click - Window: {current_window} ({window_name})")
+        except Exception as e:
+            print(f"[FOCUS] Failed to get current window: {e}")
             
-    except Exception as e:
-        print(f"[RESTORE] Failed to restore focus/mouse: {e}")
+        # X11 direct clicking
+        success = send_x11_click_to_window(win_id, x, y)
+        
+        # Brief delay for X11 event processing, then reclaim focus
+        if current_window and success:
+            time.sleep(FOCUS_RESTORE_DELAY)  # Minimal delay for game event processing
+            try:
+                subprocess.run(["xdotool", "windowactivate", "--sync", current_window, "windowraise", current_window], check=True, stderr=subprocess.DEVNULL)
+                print(f"[FOCUS] Restored to: {current_window} ({window_name})")
+            except Exception as e:
+                print(f"[FOCUS] Failed to restore focus: {e}")
+        
+        if not success:
+            print(f"[ERROR] X11 click failed! Check python-xlib installation")
+            return False
+                
+        print(f"[CLICK] ✅ {description} @ ({x},{y}) [X11 + delayed refocus]")
+        return True
+    else:
+        # Fallback pyautogui mode
+        focus_game_window()
+        pyautogui.click(x, y)
+        print(f"[CLICK] ✅ {description} @ ({x},{y}) [pyautogui]")
+        return True
 
 
-def get_input_device_ids():
-    """Get keyboard and mouse device IDs for xinput control"""
-    keyboard_id, mouse_id = None, None
+
+
+
+
+
+
+
+
+
+def send_x11_click_to_window(window_id, x, y):
+    """Send click using X11 send_event (working method)"""
     try:
-        result = subprocess.check_output(["xinput", "list"], text=True)
-        for line in result.split('\n'):
-            if 'id=' in line:
-                # Extract id=XX from line
-                start = line.find('id=') + 3
-                end = line.find('\t', start) if '\t' in line[start:] else len(line)
-                device_id = line[start:end].strip()
-                if device_id.isdigit():
-                    if 'keyboard' in line.lower() and not keyboard_id:
-                        keyboard_id = device_id
-                    elif ('mouse' in line.lower() or 'pointer' in line.lower()) and 'XTEST' not in line and not mouse_id:
-                        mouse_id = device_id
-        return keyboard_id, mouse_id
+        from Xlib import protocol
+        import time
+        disp = display.Display()
+        window = disp.create_resource_object('window', int(window_id))
+        
+        # Convert screen coordinates to window-relative coordinates
+        geom = window.get_geometry()
+        rel_x = x - geom.x
+        rel_y = y - geom.y
+        
+        event_details = {
+            'root': disp.screen().root,
+            'window': window,
+            'same_screen': 1,
+            'child': X.NONE,
+            'root_x': x,
+            'root_y': y,
+            'event_x': rel_x,
+            'event_y': rel_y,
+            'state': 0,
+            'detail': 1,  # Left mouse button
+            'time': int(time.time() * 1000) & 0xFFFFFFFF
+        }
+        
+        # Create and send button press event
+        press_event = protocol.event.ButtonPress(**event_details)
+        window.send_event(press_event, propagate=True)
+        
+        # Create and send button release event  
+        release_event = protocol.event.ButtonRelease(**event_details)
+        window.send_event(release_event, propagate=True)
+        
+        # Flush events
+        disp.flush()
+        disp.sync()
+        disp.close()
+        return True
+        
     except Exception as e:
-        print(f"[INPUT] Failed to get input device IDs: {e}")
-        return None, None
-
-
-def disable_input_devices():
-    """Temporarily disable keyboard and mouse input (prevents interference, input is lost)"""
-    if keyboard_device_id:
-        try:
-            subprocess.run(["xinput", "disable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-    if mouse_device_id:
-        try:
-            subprocess.run(["xinput", "disable", mouse_device_id], check=True, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-
-
-def enable_input_devices():
-    """Re-enable keyboard and mouse input (WARNING: input typed during disable is lost)"""
-    if keyboard_device_id:
-        try:
-            subprocess.run(["xinput", "enable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
-    if mouse_device_id:
-        try:
-            subprocess.run(["xinput", "enable", mouse_device_id], check=True, stderr=subprocess.DEVNULL)
-        except Exception:
-            pass
+        print(f"[X11] Click failed: {e}")
+        return False
 
 
 def setup_wmctrl_always_on_top():
@@ -471,27 +434,23 @@ def deduplicate_auto_icons(matches, min_distance=60):
 
 
 if __name__ == "__main__":
+    # GNOME focus workaround for Pop!_OS
+    import os
+    os.environ['GNOME_SHELL_SLOWDOWN_FACTOR'] = '0'  # Disable GNOME animations
+    os.environ['GDK_BACKEND'] = 'x11'  # Force X11 backend
+    
     region, win_id = get_game_region()
     print(f"DEBUG region = {region}")
     
-    # Set up input device IDs for blocking if enabled
-    keyboard_device_id, mouse_device_id = None, None
-    if BUFFER_INPUT_DURING_CLICKS:
-        keyboard_device_id, mouse_device_id = get_input_device_ids()
-        if keyboard_device_id:
-            print(f"[INPUT] Found keyboard device ID: {keyboard_device_id}")
-        if mouse_device_id:
-            print(f"[INPUT] Found mouse device ID: {mouse_device_id}")
-        if keyboard_device_id or mouse_device_id:
-            print(f"[INPUT] WARNING: Input during clicks will be lost (xinput blocks, doesn't buffer)")
-        else:
-            print(f"[INPUT] No input devices found - input blocking disabled")
     
     # Set up wmctrl window management if enabled
     if USE_WMCTRL_ALWAYS_ON_TOP:
         setup_wmctrl_always_on_top()
     
-    print("[SETUP] Bot ready - using simple pyautogui clicks")
+    if USE_X11_DIRECT_CLICKS:
+        print("[SETUP] Bot ready - using X11 direct clicks (no interference)")
+    else:
+        print("[SETUP] Bot ready - using pyautogui clicks (focus required)")
     print("[INFO] Press Ctrl+C to stop the bot")
 
     run_count = 0
@@ -628,14 +587,14 @@ if __name__ == "__main__":
             )
             auto, rule = valid_rooms[0]
             px = int((auto.left + rule.left + rule.width) // 2)
-            py_ = int(auto.top + auto.height // 2)
+            py = int(auto.top + auto.height // 2)
             log_run(
                 run_count,
                 "CALCULATE",
-                f"Target position: ({px}, {py_}) - between AUTO and Rule",
+                f"Target position: ({px}, {py}) - between AUTO and Rule",
             )
 
-            simple_click(px, py_, "room join")
+            simple_click(px, py, "room join")
 
             # Brief pause to check what happened
             log_run(

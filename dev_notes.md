@@ -213,11 +213,11 @@ subprocess.run(["xinput", "enable", "keyboard_id"])
 
 ## Recent Optimizations (Latest Session)
 
-### Focus Restoration System Implementation
-- **Added configurable flag**: `RESTORE_FOCUS_AND_MOUSE` for toggling behavior
-- **Atomic timing optimization**: Eliminated delays during focus→click→restore sequence
-- **Combined xdotool calls**: Single subprocess call for windowactivate + windowraise
-- **Performance measurement**: Reduced interference window from ~0.5s to ~0.05s
+### X11 Direct Clicking with Ultra-Fast Focus Restoration - FINAL SOLUTION
+- **X11 send_event implementation**: Direct window clicks bypassing focus requirements
+- **Optimized focus restoration**: Reduced timing from 50ms to 30ms (FOCUS_RESTORE_DELAY = 0.03)
+- **Dependency cleanup**: Reduced from 17 to 5 essential dependencies  
+- **Performance measurement**: Ultra-low 30ms focus disruption window
 
 ### Timing Improvements  
 - **Ingame auto reliability**: Added `INGAME_AUTO_STABILITY_DELAY = 0.5` constant
