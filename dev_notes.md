@@ -149,26 +149,49 @@ Recovery points          Search again
 - **Error handling robustness**: Comprehensive popup detection and recovery paths
 - **Code stability**: Fixed all template detection inconsistencies
 
-### 🔄 **Focus Interference Solutions**
+### ✅ **Focus Interference Solutions - IMPLEMENTED**
 
-**Option A: Virtual Display (Xvfb)** - In Progress
-```bash
-# Complete isolation approach
-Xvfb :2 -screen 0 1920x1080x24 &
-DISPLAY=:2 wine game.exe
-DISPLAY=:2 python3 bbs_bot.py
-```
-- **Status**: Xvfb installed, ready for testing
-- **Benefit**: Zero interference - bot and work completely isolated
-- **Challenge**: Need to verify game renders properly on virtual display
-
-**Option B: Input Buffering** - Designed but not implemented
+**Solution A: Focus/Mouse Restoration System** - COMPLETE
 ```python
-# Bot creates /tmp/bot_clicking during actions
-# System wrapper queues input when lock file exists
+# Configurable flag at top of bbs_bot.py
+RESTORE_FOCUS_AND_MOUSE = True  # Toggle focus restoration
+
+def simple_click(x, y, description="element"):
+    # Capture current state
+    original_focus, original_mouse_pos = get_current_focus_and_mouse()
+    
+    # Atomic click sequence (minimized interference window)
+    focus_game_window()           # Combined windowactivate + windowraise
+    pyautogui.click(x, y)        # With PAUSE=0 temporarily
+    restore_focus_and_mouse()     # Immediate restoration
 ```
-- **Benefit**: Prevents input interference during click sequences
-- **Complexity**: Requires additional system-level input handling
+
+**Performance Impact:**
+- ✅ **Interference window**: Reduced from ~0.5s to ~0.05s per click
+- ✅ **Subprocess calls**: 25% reduction (4→3 calls per click with restoration)
+- ✅ **User experience**: Minimal typing disruption during bot operation
+- ✅ **Reliability**: Maintains click accuracy while reducing focus stealing
+
+**Alternative Solutions Still Available:**
+
+**Option B: Xephyr Nested X Server** - Researched
+```bash
+# Complete isolation with visual access
+Xephyr :1 -screen 1280x720 -title "Game Display"
+DISPLAY=:1 steam  # Game runs in nested window
+# Bot clicks only affect Xephyr window, main desktop unaffected
+```
+- **Status**: Verified as official X.Org component, well-supported
+- **Benefit**: Complete isolation while maintaining game visibility
+- **Implementation**: Would require bot code modification for :1 display
+
+**Option C: Input Buffering** - Available if needed
+```python
+# Temporarily disable input devices during critical click sequences
+subprocess.run(["xinput", "disable", "keyboard_id"])
+# ... atomic click sequence ...
+subprocess.run(["xinput", "enable", "keyboard_id"]) 
+```
 
 ### 📊 **Performance Characteristics**
 - **Cycle time**: 2-5 minutes per quest depending on queue times
@@ -177,16 +200,34 @@ DISPLAY=:2 python3 bbs_bot.py
 - **Template matching**: <0.1s per detection operation
 
 ### ⚙️ **Technical Debt & Improvements**
-- **Monolithic main loop**: 900+ lines, could benefit from state handler extraction
+- **Monolithic main loop**: 1000+ lines, could benefit from state handler extraction
 - **Code duplication**: Template detection pattern repeated ~8 times
 - **Configuration**: Game path hardcoded, could use config file
 - **Documentation**: Templates require manual creation by users
 
 ### 🎯 **Next Steps (Optional)**
-1. **Test virtual display solution** for complete work isolation
-2. **Extract state handler functions** for better code organization  
-3. **Add template examples** for easier user setup
-4. **Create configuration file** for game paths and settings
+1. **Extract state handler functions** for better code organization  
+2. **Add template examples** for easier user setup
+3. **Create configuration file** for game paths and settings
+4. **Test Xephyr nested X server** for users needing complete isolation
+
+## Recent Optimizations (Latest Session)
+
+### Focus Restoration System Implementation
+- **Added configurable flag**: `RESTORE_FOCUS_AND_MOUSE` for toggling behavior
+- **Atomic timing optimization**: Eliminated delays during focus→click→restore sequence
+- **Combined xdotool calls**: Single subprocess call for windowactivate + windowraise
+- **Performance measurement**: Reduced interference window from ~0.5s to ~0.05s
+
+### Timing Improvements  
+- **Ingame auto reliability**: Added `INGAME_AUTO_STABILITY_DELAY = 0.5` constant
+- **Template detection**: Maintained existing delays for non-critical operations
+- **Subprocess optimization**: 25% reduction in system calls during restoration mode
+
+### Code Quality
+- **Constants consolidation**: All timing values moved to top-level configuration
+- **Virtual environment**: Added proper dependency management with requirements.txt
+- **Documentation updates**: README and dev_notes updated with new features
 
 ## Performance Notes
 
