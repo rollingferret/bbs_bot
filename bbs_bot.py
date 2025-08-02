@@ -20,7 +20,7 @@ ROOM_JOIN_CHECK_DELAY = (
 
 # === QUEST EXECUTION TIMEOUTS ===
 CHECK_RUN_START_TIMEOUT = (
-    90  # Max time to wait for quest to start (looking for auto button)
+    120  # Max time to wait for quest to start (looking for auto button)
 )
 QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 
