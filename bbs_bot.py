@@ -47,10 +47,20 @@ FINAL_PAUSE_DELAY = 0.5        # Brief final pause before next cycle
 pyautogui.FAILSAFE = False  # Disable mouse-corner failsafe (use Ctrl+C instead)
 pyautogui.PAUSE = 0.1  # Global delay after every pyautogui action (reduced for speed)
 
+# === FOCUS RESTORATION ===
+RESTORE_FOCUS_AND_MOUSE = True  # Set to False to disable focus/mouse restoration (better performance, more disruptive)
+
+# === WINDOW MANAGEMENT ===
+USE_WMCTRL_ALWAYS_ON_TOP = True  # Set to True to make game window sticky and always on top (works across workspaces)
+
+# === INPUT BUFFERING ===
+BUFFER_INPUT_DURING_CLICKS = True  # Set to True to disable keyboard/mouse during clicks (prevents input interference)
+
 # === TEMPLATE MATCHING ===
 TEMPLATE_FOUND_DELAY = (
     0.2  # Small delay after finding template before clicking (stability)
 )
+INGAME_AUTO_STABILITY_DELAY = 0.5  # Extra delay before clicking ingame auto button
 
 TEMPLATES = {
     "coop_quest": "images/coop_quest.png",
@@ -120,38 +130,158 @@ def screenshot_and_exit(region, tag, run_count=None):
 
 
 def simple_click(x, y, description="element"):
-    """Simple pyautogui click with randomization for human-like behavior"""
+    """Simple pyautogui click with optional focus/mouse restoration"""
     # Add random delay BEFORE focusing (human-like timing, no interference)
     random_delay = random.uniform(0.1, 0.4)
     time.sleep(random_delay)
     
+    # Capture current focus and mouse position for restoration (if enabled)
+    original_focus, original_mouse_pos = None, None
+    if RESTORE_FOCUS_AND_MOUSE:
+        original_focus, original_mouse_pos = get_current_focus_and_mouse()
+    
+    # Make focus→click→restore atomic (no delays) to minimize interference time
+    if RESTORE_FOCUS_AND_MOUSE:
+        # Save original pause setting
+        original_pause = pyautogui.PAUSE
+        pyautogui.PAUSE = 0  # Remove all pyautogui delays during critical section
+    
     # Focus and raise game window, then click immediately (no delay window)  
     focus_game_window()
     
+    # Disable keyboard right before clicking to prevent typing interference (keystrokes lost)
+    if BUFFER_INPUT_DURING_CLICKS:
+        disable_keyboard_input()
+    
     # Click at the provided coordinates (already randomized by poll_and_click)
-    print(f"[CLICK] {description} @ ({x},{y}) [random within template]")
+    # No print during critical interference window for maximum speed
     pyautogui.click(x, y)
-    print(f"[CLICK] ✅ Clicked {description}")
+    
+    # Restore original focus and mouse position IMMEDIATELY to minimize interference
+    if RESTORE_FOCUS_AND_MOUSE:
+        restore_focus_and_mouse(original_focus, original_mouse_pos)
+        # Restore original pause setting
+        pyautogui.PAUSE = original_pause
+    
+    # Re-enable keyboard AFTER focus restore
+    if BUFFER_INPUT_DURING_CLICKS:
+        enable_keyboard_input()
+        
+    # Log after everything complete to avoid I/O during interference window
+    if RESTORE_FOCUS_AND_MOUSE:
+        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [restored focus + buffered input]")
+    elif BUFFER_INPUT_DURING_CLICKS:
+        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [buffered input]")
+    else:
+        print(f"[CLICK] ✅ Clicked {description} @ ({x},{y}) [basic click]")
     
     # No post-click delay - pyautogui.PAUSE=0.1 already handles this
 
 
-def focus_game_window():
-    """Focus and raise game window for reliable clicking"""
+def get_current_focus_and_mouse():
+    """Capture current focused window and mouse position for restoration"""
     try:
-        # Both focus AND raise for reliable clicking
+        # Get currently focused window
+        current_focus = subprocess.check_output(
+            ["xdotool", "getwindowfocus"], text=True
+        ).strip()
+        
+        # Get current mouse position
+        mouse_pos = pyautogui.position()
+        
+        return current_focus, mouse_pos
+    except Exception as e:
+        print(f"[RESTORE] Failed to get current focus/mouse: {e}")
+        return None, None
+
+
+def restore_focus_and_mouse(original_focus, original_mouse_pos):
+    """Restore original window focus and mouse position (prioritize focus for speed)"""
+    try:
+        # Restore original window focus FIRST (most important for user)
+        if original_focus:
+            subprocess.run(
+                ["xdotool", "windowactivate", original_focus],
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+        
+        # Restore mouse position SECOND (less critical)
+        if original_mouse_pos:
+            pyautogui.moveTo(original_mouse_pos.x, original_mouse_pos.y)
+            
+    except Exception as e:
+        print(f"[RESTORE] Failed to restore focus/mouse: {e}")
+
+
+def get_keyboard_device_id():
+    """Get keyboard device ID for xinput control (prevents typing interference, doesn't buffer)"""
+    try:
+        result = subprocess.check_output(["xinput", "list"], text=True)
+        for line in result.split('\n'):
+            if 'id=' in line and 'keyboard' in line.lower():
+                # Extract id=XX from line
+                start = line.find('id=') + 3
+                end = line.find('\t', start) if '\t' in line[start:] else len(line)
+                device_id = line[start:end].strip()
+                if device_id.isdigit():
+                    return device_id
+        return None
+    except Exception as e:
+        print(f"[INPUT] Failed to get keyboard device ID: {e}")
+        return None
+
+
+def disable_keyboard_input():
+    """Temporarily disable keyboard input (prevents typing interference, keystrokes are lost)"""
+    if keyboard_device_id:
+        try:
+            subprocess.run(["xinput", "disable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
+def enable_keyboard_input():
+    """Re-enable keyboard input (WARNING: keystrokes typed during disable are lost)"""
+    if keyboard_device_id:
+        try:
+            subprocess.run(["xinput", "enable", keyboard_device_id], check=True, stderr=subprocess.DEVNULL)
+        except Exception:
+            pass
+
+
+def setup_wmctrl_always_on_top():
+    """Set game window to be sticky and always on top using wmctrl"""
+    try:
         subprocess.run(
-            ["xdotool", "windowactivate", "--sync", win_id],
+            ["wmctrl", "-r", GAME_WINDOW_TITLE, "-b", "add,sticky,above"],
             check=True,
             stderr=subprocess.DEVNULL,
         )
-        subprocess.run(
-            ["xdotool", "windowraise", win_id], check=True, stderr=subprocess.DEVNULL
-        )
-        # No delay needed - --sync ensures windowactivate completes before continuing
-        print("[FOCUS] Game window focused and raised for click")
+        print("[WMCTRL] Game window set to sticky and always on top")
     except Exception as e:
-        print(f"[FOCUS] Failed to focus/raise window: {e}")
+        print(f"[WMCTRL] Failed to set window sticky/above: {e}")
+
+
+def focus_game_window():
+    """Focus game window for reliable clicking (no logging during interference window)"""
+    try:
+        if USE_WMCTRL_ALWAYS_ON_TOP:
+            # Just focus - no raise needed since wmctrl keeps window on top
+            subprocess.run(
+                ["xdotool", "windowactivate", "--sync", win_id],
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            # Combined focus and raise in single xdotool call for better performance
+            subprocess.run(
+                ["xdotool", "windowactivate", "--sync", win_id, "windowraise", win_id],
+                check=True,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception as e:
+        print(f"[FOCUS] Failed to focus window: {e}")
 
 
 def poll_and_click(
@@ -329,6 +459,21 @@ def deduplicate_auto_icons(matches, min_distance=60):
 if __name__ == "__main__":
     region, win_id = get_game_region()
     print(f"DEBUG region = {region}")
+    
+    # Set up keyboard device ID for input blocking if enabled
+    keyboard_device_id = None
+    if BUFFER_INPUT_DURING_CLICKS:
+        keyboard_device_id = get_keyboard_device_id()
+        if keyboard_device_id:
+            print(f"[INPUT] Found keyboard device ID: {keyboard_device_id}")
+            print(f"[INPUT] WARNING: Keystrokes during clicks will be lost (xinput doesn't buffer)")
+        else:
+            print(f"[INPUT] No keyboard device found - input blocking disabled")
+    
+    # Set up wmctrl window management if enabled
+    if USE_WMCTRL_ALWAYS_ON_TOP:
+        setup_wmctrl_always_on_top()
+    
     print("[SETUP] Bot ready - using simple pyautogui clicks")
     print("[INFO] Press Ctrl+C to stop the bot")
 
@@ -659,7 +804,7 @@ if __name__ == "__main__":
                             f"[RUN {run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - clicking to turn ON!"
                         )
                         # Extra stability delay for auto button
-                        time.sleep(0.3)
+                        time.sleep(INGAME_AUTO_STABILITY_DELAY)
                         # Use proper polling click for consistency
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of auto button (avoid edges for circular buttons)

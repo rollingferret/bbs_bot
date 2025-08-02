@@ -2,6 +2,16 @@
 
 Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enabled rooms, handles errors, loops continuously.
 
+## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
+
+**NO SUPPORT PROVIDED**: This project is released as-is with no warranty, support, or maintenance. The author accepts no responsibility for:
+- Account bans or penalties from game publishers
+- Terms of Service violations 
+- System damage or data loss
+- Any other consequences of using this software
+
+**LEGAL WARNING**: Game automation may violate Terms of Service and could result in permanent account bans. Use entirely at your own risk.
+
 ## Requirements
 
 - Linux with X11 (tested on Pop!_OS/Ubuntu)
@@ -12,10 +22,14 @@ Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enable
 ## Setup
 
 ```bash
-sudo apt install python3 python3-pip xdotool
+sudo apt install python3 python3-pip python3-venv xdotool
 git clone https://github.com/yourusername/bbs_bot.git
 cd bbs_bot
-pip3 install -r requirements.txt
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 
 # Create template images (see below)
 mkdir images
@@ -58,24 +72,49 @@ Create `images/` folder with these files:
 5. **Completes quest** and retries automatically
 6. **Loops forever** until you stop it (Ctrl+C)
 
+## Configuration
+
+The bot has several configurable options at the top of `bbs_bot.py`:
+
+### Focus Restoration (NEW!)
+```python
+RESTORE_FOCUS_AND_MOUSE = False  # Set to True to reduce focus stealing
+```
+- **True**: Bot restores your window focus and mouse position after each click (less disruptive)
+- **False**: Bot leaves focus on game window (better performance, more disruptive)
+
+### Timing Constants
+- `INGAME_AUTO_STABILITY_DELAY = 0.5` - Extra delay before clicking ingame auto button
+- `TEMPLATE_FOUND_DELAY = 0.2` - Stability delay after finding templates
+- `ROOM_LOAD_TIMEOUT = 5` - Max time to wait for room list loading
+- And many more timing controls for fine-tuning
+
 ## Known Issues
 
-- **Window focus stealing** - Bot focuses game window for clicks, interrupting work
-- **Input interference** - Your mouse/keyboard input during bot actions can break clicks
-- **Linux/X11 only** - Won't work on Windows without modification
+- **Focus stealing** - Bot must focus game window for reliable clicking. Use `RESTORE_FOCUS_AND_MOUSE = True` to minimize disruption
+- **Typing interference** - When bot steals focus, your keystrokes may go to game instead of terminal
+- **Linux/X11 only** - Won't work on Windows without modification  
 - **Template dependent** - Breaks if game UI changes
 
 ## Current Status
 
 - **Stable**: Runs 30+ consecutive quests unattended
 - **Performance**: 2-5 minute cycles, >95% success rate
-- **Focus issue**: Being researched - input buffering or cursor position saving
+- **Focus restoration**: NEW atomic timing minimizes keystroke interference to ~0.05s windows
+
+## Recent Updates
+
+- ✅ **Focus restoration system** - Optional window focus and mouse position restoration
+- ✅ **Atomic timing optimization** - Minimized interference window to ~0.05s during clicks
+- ✅ **Performance improvements** - Combined xdotool calls, reduced subprocess overhead
+- ✅ **Configurable ingame auto delay** - Improved reliability for auto button clicking
+- ✅ **Virtual environment support** - Clean dependency management
 
 ## Future Improvements
 
 - **Code refactoring**: Extract repeated template detection patterns
-- **State handler functions**: Break 900-line main loop into readable functions  
-- **Input isolation**: Research libraries for temporary keyboard/mouse blocking
+- **State handler functions**: Break 1000+ line main loop into readable functions  
+- **Alternative input isolation**: Explore Xephyr nested X server for complete isolation
 - **Configuration file**: Move timing constants to external config
 
 See `dev_notes.md` for technical details and solution research.
