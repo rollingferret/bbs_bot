@@ -6,7 +6,7 @@ import random
 
 import pyautogui
 import pyscreeze
-from Xlib import X, display
+from Xlib import X, display, protocol
 
 # --- CONFIGURATION ---
 GAME_WINDOW_TITLE = "Bleach: Brave Souls"
@@ -21,7 +21,7 @@ ROOM_JOIN_CHECK_DELAY = (
 
 # === QUEST EXECUTION TIMEOUTS ===
 CHECK_RUN_START_TIMEOUT = (
-    120  # Max time to wait for quest to start (looking for auto button)
+    150  # Max time to wait for quest to start (looking for auto button)
 )
 QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 
@@ -37,12 +37,15 @@ RETRY_PAUSE_DELAY = 0.5  # Brief pause after clicking retry button
 
 # === POLLING AND RECOVERY DELAYS ===
 ROOM_LIST_POLL_INTERVAL = 0.5  # How often to check if room list loaded
-READY_POLL_INTERVAL = 0.5      # How often to poll for ready button
-DISCONNECT_RECOVERY_DELAY = 2.0 # Wait after disconnect popup before restart
-RETIREMENT_STEP_DELAY = 1.0    # Wait between retirement confirmation steps
+READY_POLL_INTERVAL = 0.5  # How often to poll for ready button
+READY_BUTTON_TIMEOUT = 15  # Max time to wait for ready button to appear
+TAP1_BUTTON_TIMEOUT = 15      # Max time to wait for first tap button
+TAP2_BUTTON_TIMEOUT = 20      # Max time to wait for second tap button
+DISCONNECT_RECOVERY_DELAY = 2.0  # Wait after disconnect popup before restart
+RETIREMENT_STEP_DELAY = 1.0  # Wait between retirement confirmation steps
 RUN_START_POLL_INTERVAL = 2.0  # How often to check if quest started
-QUEST_POLL_INTERVAL = 10.0     # How often to check quest completion
-FINAL_PAUSE_DELAY = 0.5        # Brief final pause before next cycle
+QUEST_POLL_INTERVAL = 10.0  # How often to check quest completion
+FINAL_PAUSE_DELAY = 0.5  # Brief final pause before next cycle
 
 # === PYAUTOGUI CONFIGURATION ===
 pyautogui.FAILSAFE = False  # Disable mouse-corner failsafe (use Ctrl+C instead)
@@ -57,13 +60,24 @@ USE_WMCTRL_ALWAYS_ON_TOP = True  # Set to True to make game window sticky and al
 USE_X11_DIRECT_CLICKS = True  # Set to True to use X11 direct window clicks (no focus stealing) vs pyautogui (needs focus)
 
 # === TEMPLATE MATCHING ===
-TEMPLATE_FOUND_DELAY = (
-    0.2  # Small delay after finding template before clicking (stability)
-)
-INGAME_AUTO_STABILITY_DELAY = 0.5  # Extra delay before clicking ingame auto button
+TEMPLATE_FOUND_DELAY = 0.05  # Small delay after finding template before clicking
+INGAME_AUTO_READY_DELAY = 1.0  # Wait for game to fully load before clicking auto button
 
 # === FOCUS MANAGEMENT ===
-FOCUS_RESTORE_DELAY = 0.03  # Delay before focus restoration after X11 click
+FOCUS_RESTORE_DELAY = 0.01  # Delay before focus restoration after X11 click
+
+# === TEMPLATE MATCHING CONFIDENCE ===
+TEMPLATE_CONFIDENCE_HIGH = 0.95  # For critical detection (ingame auto on)
+TEMPLATE_CONFIDENCE_NORMAL = 0.8  # Standard confidence level
+TEMPLATE_CONFIDENCE_LOOSE = 0.7  # For harder-to-match elements
+
+# === CENTER CLICKING ===
+CENTER_CLICK_OFFSET_FACTOR = 6  # Offset divisor for center-focused clicking
+AUTO_BUTTON_OFFSET_FACTOR = 10  # Tighter offset for auto button (smaller clickable area)
+
+# === AUTO ICON DETECTION ===
+AUTO_ICON_MIN_DISTANCE = 60  # Min pixels between auto icons for dedup
+ROOM_MATCHING_WEIGHT_FACTOR = 0.1  # Horizontal weight in room proximity algorithm
 
 TEMPLATES = {
     "coop_quest": "images/coop_quest.png",
@@ -106,7 +120,9 @@ def get_game_region():
         geo_lines = subprocess.check_output(
             ["xdotool", "getwindowgeometry", "--shell", wid], text=True
         ).splitlines()
-        geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
+        geo = {
+            k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)
+        }
     except Exception as e:
         print("Window lookup failed:", e)
         sys.exit(1)
@@ -134,34 +150,49 @@ def screenshot_and_exit(region, tag, run_count=None):
 
 def simple_click(x, y, description="element"):
     """X11 click with immediate focus reclaim"""
-    
+
     if USE_X11_DIRECT_CLICKS:
         # Capture current window before click
         current_window = None
         window_name = "Unknown"
         try:
-            current_window = subprocess.check_output(["xdotool", "getwindowfocus"], text=True).strip()
-            window_name = subprocess.check_output(["xdotool", "getwindowname", current_window], text=True).strip()
+            current_window = subprocess.check_output(
+                ["xdotool", "getwindowfocus"], text=True
+            ).strip()
+            window_name = subprocess.check_output(
+                ["xdotool", "getwindowname", current_window], text=True
+            ).strip()
             print(f"[FOCUS] Before click - Window: {current_window} ({window_name})")
         except Exception as e:
             print(f"[FOCUS] Failed to get current window: {e}")
-            
+
         # X11 direct clicking
         success = send_x11_click_to_window(win_id, x, y)
-        
+
         # Brief delay for X11 event processing, then reclaim focus
         if current_window and success:
             time.sleep(FOCUS_RESTORE_DELAY)  # Minimal delay for game event processing
             try:
-                subprocess.run(["xdotool", "windowactivate", "--sync", current_window, "windowraise", current_window], check=True, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    [
+                        "xdotool",
+                        "windowactivate",
+                        "--sync",
+                        current_window,
+                        "windowraise",
+                        current_window,
+                    ],
+                    check=True,
+                    stderr=subprocess.DEVNULL,
+                )
                 print(f"[FOCUS] Restored to: {current_window} ({window_name})")
             except Exception as e:
                 print(f"[FOCUS] Failed to restore focus: {e}")
-        
+
         if not success:
-            print(f"[ERROR] X11 click failed! Check python-xlib installation")
+            print("[ERROR] X11 click failed! Check python-xlib installation")
             return False
-                
+
         print(f"[CLICK] ✅ {description} @ ({x},{y}) [X11 + delayed refocus]")
         return True
     else:
@@ -172,56 +203,45 @@ def simple_click(x, y, description="element"):
         return True
 
 
-
-
-
-
-
-
-
-
-
 def send_x11_click_to_window(window_id, x, y):
     """Send click using X11 send_event (working method)"""
     try:
-        from Xlib import protocol
-        import time
         disp = display.Display()
-        window = disp.create_resource_object('window', int(window_id))
-        
+        window = disp.create_resource_object("window", int(window_id))
+
         # Convert screen coordinates to window-relative coordinates
         geom = window.get_geometry()
         rel_x = x - geom.x
         rel_y = y - geom.y
-        
+
         event_details = {
-            'root': disp.screen().root,
-            'window': window,
-            'same_screen': 1,
-            'child': X.NONE,
-            'root_x': x,
-            'root_y': y,
-            'event_x': rel_x,
-            'event_y': rel_y,
-            'state': 0,
-            'detail': 1,  # Left mouse button
-            'time': int(time.time() * 1000) & 0xFFFFFFFF
+            "root": disp.screen().root,
+            "window": window,
+            "same_screen": 1,
+            "child": X.NONE,
+            "root_x": x,
+            "root_y": y,
+            "event_x": rel_x,
+            "event_y": rel_y,
+            "state": 0,
+            "detail": 1,  # Left mouse button
+            "time": int(time.time() * 1000) & 0xFFFFFFFF,
         }
-        
+
         # Create and send button press event
         press_event = protocol.event.ButtonPress(**event_details)
         window.send_event(press_event, propagate=True)
-        
-        # Create and send button release event  
+
+        # Create and send button release event
         release_event = protocol.event.ButtonRelease(**event_details)
         window.send_event(release_event, propagate=True)
-        
+
         # Flush events
         disp.flush()
         disp.sync()
         disp.close()
         return True
-        
+
     except Exception as e:
         print(f"[X11] Click failed: {e}")
         return False
@@ -286,7 +306,9 @@ def poll_and_click(
         try:
             # Get the full template box for safe random clicking
             template_box = pyautogui.locateOnScreen(
-                TEMPLATES[template_key], region=region, confidence=0.8
+                TEMPLATES[template_key],
+                region=region,
+                confidence=TEMPLATE_CONFIDENCE_NORMAL,
             )
             if template_box:
                 # Small delay after finding template before clicking
@@ -325,7 +347,7 @@ def find_auto_icons(region):
     try:
         all_matches = list(
             pyautogui.locateAllOnScreen(
-                TEMPLATES["auto"], region=region, confidence=0.8
+                TEMPLATES["auto"], region=region, confidence=TEMPLATE_CONFIDENCE_NORMAL
             )
         )
         # Remove duplicate/overlapping detections
@@ -339,7 +361,9 @@ def find_room_rules(region):
     try:
         return list(
             pyautogui.locateAllOnScreen(
-                TEMPLATES["room_rules_valid"], region=region, confidence=0.7
+                TEMPLATES["room_rules_valid"],
+                region=region,
+                confidence=TEMPLATE_CONFIDENCE_LOOSE,
             )
         )
     except (
@@ -366,7 +390,7 @@ def match_autos_with_rules(autos, rules, run_count):
             rule_x, rule_y = rule.left + rule.width // 2, rule.top + rule.height // 2
 
             if rule_y > auto_y:  # Rule must be below AUTO icon
-                distance = abs(rule_y - auto_y) + abs(rule_x - auto_x) * 0.1
+                distance = abs(rule_y - auto_y) + abs(rule_x - auto_x) * ROOM_MATCHING_WEIGHT_FACTOR
                 log_run(
                     run_count,
                     "MATCH",
@@ -403,7 +427,7 @@ def match_autos_with_rules(autos, rules, run_count):
     return valid_rooms
 
 
-def deduplicate_auto_icons(matches, min_distance=60):
+def deduplicate_auto_icons(matches, min_distance=AUTO_ICON_MIN_DISTANCE):
     """Remove overlapping AUTO icon detections that are too close together"""
     if not matches:
         return []
@@ -434,19 +458,13 @@ def deduplicate_auto_icons(matches, min_distance=60):
 
 
 if __name__ == "__main__":
-    # GNOME focus workaround for Pop!_OS
-    import os
-    os.environ['GNOME_SHELL_SLOWDOWN_FACTOR'] = '0'  # Disable GNOME animations
-    os.environ['GDK_BACKEND'] = 'x11'  # Force X11 backend
-    
     region, win_id = get_game_region()
-    print(f"DEBUG region = {region}")
-    
-    
+    print(f"Game window region: {region}")
+
     # Set up wmctrl window management if enabled
     if USE_WMCTRL_ALWAYS_ON_TOP:
         setup_wmctrl_always_on_top()
-    
+
     if USE_X11_DIRECT_CLICKS:
         print("[SETUP] Bot ready - using X11 direct clicks (no interference)")
     else:
@@ -500,7 +518,9 @@ if __name__ == "__main__":
                 try:
                     test_autos = list(
                         pyautogui.locateAllOnScreen(
-                            TEMPLATES["auto"], region=region, confidence=0.8
+                            TEMPLATES["auto"],
+                            region=region,
+                            confidence=TEMPLATE_CONFIDENCE_NORMAL,
                         )
                     )
                     if len(test_autos) > 0:
@@ -609,7 +629,7 @@ if __name__ == "__main__":
                 room_full_box = pyautogui.locateOnScreen(
                     TEMPLATES["closed_room_coop_quest_menu"],
                     region=region,
-                    confidence=0.8,
+                    confidence=TEMPLATE_CONFIDENCE_NORMAL,
                 )
                 if room_full_box:
                     print(
@@ -640,7 +660,9 @@ if __name__ == "__main__":
             # Check for unavailable popup or room owner disconnect
             try:
                 popup_close_box = pyautogui.locateOnScreen(
-                    TEMPLATES["close"], region=region, confidence=0.8
+                    TEMPLATES["close"],
+                    region=region,
+                    confidence=TEMPLATE_CONFIDENCE_NORMAL,
                 )
                 if popup_close_box:
                     print(
@@ -649,10 +671,12 @@ if __name__ == "__main__":
                     # Use consistent template clicking approach
                     time.sleep(TEMPLATE_FOUND_DELAY)
                     random_x = random.randint(
-                        popup_close_box.left, popup_close_box.left + popup_close_box.width - 1
+                        popup_close_box.left,
+                        popup_close_box.left + popup_close_box.width - 1,
                     )
                     random_y = random.randint(
-                        popup_close_box.top, popup_close_box.top + popup_close_box.height - 1
+                        popup_close_box.top,
+                        popup_close_box.top + popup_close_box.height - 1,
                     )
                     simple_click(random_x, random_y, "popup close")
                     print(
@@ -682,30 +706,34 @@ if __name__ == "__main__":
             log_run(run_count, "STATE", "READY")
             # Step 6: Click ready button (lobby should be loaded now)
             log_run(run_count, "STEP", "6 - Clicking ready button")
-            
+
             # Custom polling for ready button that also checks for room full popup
             start_time = time.time()
             ready_clicked = False
-            
-            while time.time() - start_time < 15 and not ready_clicked:
+
+            while time.time() - start_time < READY_BUTTON_TIMEOUT and not ready_clicked:
                 elapsed = time.time() - start_time
-                
+
                 # Check for room full popup first
                 try:
                     room_full_box = pyautogui.locateOnScreen(
                         TEMPLATES["closed_room_coop_quest_menu"],
                         region=region,
-                        confidence=0.8,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if room_full_box:
-                        print(f"[RUN {run_count + 1}] [POPUP] Room full while waiting for ready - restarting from menu")
+                        print(
+                            f"[RUN {run_count + 1}] [POPUP] Room full while waiting for ready - restarting from menu"
+                        )
                         # Use consistent template clicking approach
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
-                            room_full_box.left, room_full_box.left + room_full_box.width - 1
+                            room_full_box.left,
+                            room_full_box.left + room_full_box.width - 1,
                         )
                         random_y = random.randint(
-                            room_full_box.top, room_full_box.top + room_full_box.height - 1
+                            room_full_box.top,
+                            room_full_box.top + room_full_box.height - 1,
                         )
                         simple_click(random_x, random_y, "room full popup")
                         time.sleep(POPUP_DISMISS_DELAY)
@@ -717,16 +745,18 @@ if __name__ == "__main__":
                     pyautogui.ImageNotFoundException,
                 ):
                     pass
-                
+
                 # Check for ready button
                 try:
                     ready_box = pyautogui.locateOnScreen(
-                        TEMPLATES["ready"], region=region, confidence=0.8
+                        TEMPLATES["ready"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if ready_box:
                         # Small delay after finding template before clicking
                         time.sleep(TEMPLATE_FOUND_DELAY)
-                        
+
                         # Click randomly within the template bounds
                         random_x = random.randint(
                             ready_box.left, ready_box.left + ready_box.width - 1
@@ -735,7 +765,9 @@ if __name__ == "__main__":
                             ready_box.top, ready_box.top + ready_box.height - 1
                         )
                         simple_click(random_x, random_y, "ready button")
-                        print(f"[POLL] ready button found and clicked after {elapsed:.1f}s")
+                        print(
+                            f"[POLL] ready button found and clicked after {elapsed:.1f}s"
+                        )
                         ready_clicked = True
                         break
                 except (
@@ -744,16 +776,16 @@ if __name__ == "__main__":
                     pyautogui.ImageNotFoundException,
                 ):
                     pass
-                
+
                 print(f"[POLL] Waiting for ready button... {elapsed:.1f}s")
                 time.sleep(READY_POLL_INTERVAL)
-            
+
             if state == "READY":  # Still in READY state, ready button was clicked
                 if not ready_clicked:
                     # Timeout - take screenshot and exit
-                    print(f"[TIMEOUT] ready button not found after 15s")
+                    print(f"[TIMEOUT] ready button not found after {READY_BUTTON_TIMEOUT}s")
                     screenshot_and_exit(region, "timeout_ready", run_count)
-                    
+
                 # Ready to start the quest, now check if it actually started
                 log_run(run_count, "TRANSITION", "READY → CHECK_RUN_START")
                 state = "CHECK_RUN_START"
@@ -773,22 +805,30 @@ if __name__ == "__main__":
                 # Check for ingame auto off (should appear first) - loose threshold to catch it
                 try:
                     auto_off_box = pyautogui.locateOnScreen(
-                        TEMPLATES["ingame_auto_off"], region=region, confidence=0.7
+                        TEMPLATES["ingame_auto_off"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_LOOSE,
                     )
                     if auto_off_box:
                         print(
-                            f"[RUN {run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - clicking to turn ON!"
+                            f"[RUN {run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - waiting for game to be ready..."
                         )
-                        # Extra stability delay for auto button
-                        time.sleep(INGAME_AUTO_STABILITY_DELAY)
-                        # Use proper polling click for consistency
+                        # Wait for game to fully load before clicking auto button
+                        time.sleep(INGAME_AUTO_READY_DELAY)
+                        # Use consistent delay like other buttons
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of auto button (avoid edges for circular buttons)
                         center_x = auto_off_box.left + auto_off_box.width // 2
                         center_y = auto_off_box.top + auto_off_box.height // 2
-                        # Small random offset from center (within 30% of template size)
-                        offset_x = random.randint(-auto_off_box.width // 6, auto_off_box.width // 6)
-                        offset_y = random.randint(-auto_off_box.height // 6, auto_off_box.height // 6)
+                        # Small random offset from center (tighter for auto button reliability)
+                        offset_x = random.randint(
+                            -auto_off_box.width // AUTO_BUTTON_OFFSET_FACTOR,
+                            auto_off_box.width // AUTO_BUTTON_OFFSET_FACTOR,
+                        )
+                        offset_y = random.randint(
+                            -auto_off_box.height // AUTO_BUTTON_OFFSET_FACTOR,
+                            auto_off_box.height // AUTO_BUTTON_OFFSET_FACTOR,
+                        )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
                         simple_click(random_x, random_y, "ingame auto off")
@@ -805,7 +845,9 @@ if __name__ == "__main__":
                 # Also check for auto on (in case it was already enabled) - strict threshold
                 try:
                     auto_on_box = pyautogui.locateOnScreen(
-                        TEMPLATES["ingame_auto_on"], region=region, confidence=0.95
+                        TEMPLATES["ingame_auto_on"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_HIGH,
                     )
                     if auto_on_box:
                         print(
@@ -826,7 +868,7 @@ if __name__ == "__main__":
                     room_closed_box = pyautogui.locateOnScreen(
                         TEMPLATES["closed_room_coop_quest_menu"],
                         region=region,
-                        confidence=0.8,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if room_closed_box:
                         print(
@@ -835,10 +877,12 @@ if __name__ == "__main__":
                         # Use consistent template clicking approach
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
-                            room_closed_box.left, room_closed_box.left + room_closed_box.width - 1
+                            room_closed_box.left,
+                            room_closed_box.left + room_closed_box.width - 1,
                         )
                         random_y = random.randint(
-                            room_closed_box.top, room_closed_box.top + room_closed_box.height - 1
+                            room_closed_box.top,
+                            room_closed_box.top + room_closed_box.height - 1,
                         )
                         simple_click(random_x, random_y, "room closed popup")
                         time.sleep(RETIREMENT_STEP_DELAY)
@@ -857,7 +901,9 @@ if __name__ == "__main__":
                 # Check for any disconnect popup (network/room owner) - both use close button
                 try:
                     close_btn_box = pyautogui.locateOnScreen(
-                        TEMPLATES["close"], region=region, confidence=0.8
+                        TEMPLATES["close"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if close_btn_box:
                         print(
@@ -866,10 +912,12 @@ if __name__ == "__main__":
                         # Use consistent template clicking approach
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
-                            close_btn_box.left, close_btn_box.left + close_btn_box.width - 1
+                            close_btn_box.left,
+                            close_btn_box.left + close_btn_box.width - 1,
                         )
                         random_y = random.randint(
-                            close_btn_box.top, close_btn_box.top + close_btn_box.height - 1
+                            close_btn_box.top,
+                            close_btn_box.top + close_btn_box.height - 1,
                         )
                         simple_click(random_x, random_y, "disconnect popup close")
                         time.sleep(DISCONNECT_RECOVERY_DELAY)
@@ -907,7 +955,9 @@ if __name__ == "__main__":
                 # Now try to find and click retire button
                 try:
                     retire_btn_box = pyautogui.locateOnScreen(
-                        TEMPLATES["retire"], region=region, confidence=0.8
+                        TEMPLATES["retire"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if retire_btn_box:
                         print(
@@ -916,10 +966,12 @@ if __name__ == "__main__":
                         # Use consistent template clicking approach
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
-                            retire_btn_box.left, retire_btn_box.left + retire_btn_box.width - 1
+                            retire_btn_box.left,
+                            retire_btn_box.left + retire_btn_box.width - 1,
                         )
                         random_y = random.randint(
-                            retire_btn_box.top, retire_btn_box.top + retire_btn_box.height - 1
+                            retire_btn_box.top,
+                            retire_btn_box.top + retire_btn_box.height - 1,
                         )
                         simple_click(random_x, random_y, "retire button")
                         time.sleep(RETIREMENT_STEP_DELAY)
@@ -983,7 +1035,9 @@ if __name__ == "__main__":
                 # Check if quest completed (tap1 button available)
                 try:
                     tap1_box = pyautogui.locateOnScreen(
-                        TEMPLATES["tap1"], region=region, confidence=0.8
+                        TEMPLATES["tap1"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if tap1_box:
                         print(
@@ -1002,7 +1056,9 @@ if __name__ == "__main__":
                 # Check for network disconnect popup during quest (resume single player or close)
                 try:
                     close_btn_box = pyautogui.locateOnScreen(
-                        TEMPLATES["close"], region=region, confidence=0.8
+                        TEMPLATES["close"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if close_btn_box:
                         print(
@@ -1011,10 +1067,12 @@ if __name__ == "__main__":
                         # Use consistent template clicking approach
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
-                            close_btn_box.left, close_btn_box.left + close_btn_box.width - 1
+                            close_btn_box.left,
+                            close_btn_box.left + close_btn_box.width - 1,
                         )
                         random_y = random.randint(
-                            close_btn_box.top, close_btn_box.top + close_btn_box.height - 1
+                            close_btn_box.top,
+                            close_btn_box.top + close_btn_box.height - 1,
                         )
                         simple_click(random_x, random_y, "network disconnect close")
                         print(
@@ -1039,26 +1097,36 @@ if __name__ == "__main__":
             log_run(run_count, "STATE", "FINISH")
             # Steps 8–9: tap to continue twice (center-focused clicking)
             log_run(run_count, "STEP", "8 - First tap to continue")
-            
+
             # Custom tap1 clicking with center focus
             start_time = time.time()
             tap1_clicked = False
-            while time.time() - start_time < 15 and not tap1_clicked:
+            while time.time() - start_time < TAP1_BUTTON_TIMEOUT and not tap1_clicked:
                 try:
                     tap1_box = pyautogui.locateOnScreen(
-                        TEMPLATES["tap1"], region=region, confidence=0.8
+                        TEMPLATES["tap1"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if tap1_box:
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of tap1 button
                         center_x = tap1_box.left + tap1_box.width // 2
                         center_y = tap1_box.top + tap1_box.height // 2
-                        offset_x = random.randint(-tap1_box.width // 6, tap1_box.width // 6)
-                        offset_y = random.randint(-tap1_box.height // 6, tap1_box.height // 6)
+                        offset_x = random.randint(
+                            -tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                            tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                        )
+                        offset_y = random.randint(
+                            -tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                            tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                        )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
                         simple_click(random_x, random_y, "first tap button")
-                        print(f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s")
+                        print(
+                            f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s"
+                        )
                         tap1_clicked = True
                         break
                 except (
@@ -1067,35 +1135,45 @@ if __name__ == "__main__":
                     pyautogui.ImageNotFoundException,
                 ):
                     pass
-                time.sleep(0.5)
-            
+                time.sleep(READY_POLL_INTERVAL)
+
             if not tap1_clicked:
                 screenshot_and_exit(region, "timeout_tap1", run_count)
-                
+
             log_run(run_count, "WAIT", "Brief pause after first tap...")
             time.sleep(TAP_PAUSE_DELAY)
 
             log_run(run_count, "STEP", "9 - Second tap to continue")
-            
+
             # Custom tap2 clicking with center focus
             start_time = time.time()
             tap2_clicked = False
-            while time.time() - start_time < 20 and not tap2_clicked:
+            while time.time() - start_time < TAP2_BUTTON_TIMEOUT and not tap2_clicked:
                 try:
                     tap2_box = pyautogui.locateOnScreen(
-                        TEMPLATES["tap2"], region=region, confidence=0.8
+                        TEMPLATES["tap2"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if tap2_box:
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of tap2 button
                         center_x = tap2_box.left + tap2_box.width // 2
                         center_y = tap2_box.top + tap2_box.height // 2
-                        offset_x = random.randint(-tap2_box.width // 6, tap2_box.width // 6)
-                        offset_y = random.randint(-tap2_box.height // 6, tap2_box.height // 6)
+                        offset_x = random.randint(
+                            -tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                            tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                        )
+                        offset_y = random.randint(
+                            -tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                            tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                        )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
                         simple_click(random_x, random_y, "second tap button")
-                        print(f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s")
+                        print(
+                            f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s"
+                        )
                         tap2_clicked = True
                         break
                 except (
@@ -1104,8 +1182,8 @@ if __name__ == "__main__":
                     pyautogui.ImageNotFoundException,
                 ):
                     pass
-                time.sleep(0.5)
-            
+                time.sleep(READY_POLL_INTERVAL)
+
             if not tap2_clicked:
                 screenshot_and_exit(region, "timeout_tap2", run_count)
             log_run(

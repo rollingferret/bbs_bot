@@ -80,14 +80,14 @@ The bot has several configurable options at the top of `bbs_bot.py`:
 ```python
 USE_X11_DIRECT_CLICKS = True  # X11 direct window clicks (minimal focus stealing)
 USE_WMCTRL_ALWAYS_ON_TOP = True  # Keep game window always visible
-FOCUS_RESTORE_DELAY = 0.03  # Ultra-fast focus restoration timing
+FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
 ```
-- **X11 Mode**: Direct window clicks with 30ms focus restoration for minimal interference
+- **X11 Mode**: Direct window clicks with automatic focus restoration
 - **PyAutoGUI Mode**: Traditional clicking that requires window focus
 
 ### Timing Constants
-- `INGAME_AUTO_STABILITY_DELAY = 0.5` - Extra delay before clicking ingame auto button
-- `TEMPLATE_FOUND_DELAY = 0.2` - Stability delay after finding templates
+- `TEMPLATE_FOUND_DELAY = 0.05` - Delay after finding templates before clicking
+- `FOCUS_RESTORE_DELAY = 0.01` - Focus restoration timing after X11 clicks
 - `ROOM_LOAD_TIMEOUT = 5` - Max time to wait for room list loading
 - And many more timing controls for fine-tuning
 
@@ -101,7 +101,7 @@ FOCUS_RESTORE_DELAY = 0.03  # Ultra-fast focus restoration timing
 
 - **Stable**: Runs 30+ consecutive quests unattended  
 - **Performance**: 2-5 minute cycles, >95% success rate
-- **Ultra-Low Interference**: 30ms focus disruption window for minimal keystroke loss
+- **Low Interference**: Minimal focus disruption while typing
 
 ## Recent Updates
 
