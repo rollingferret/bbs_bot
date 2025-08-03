@@ -18,11 +18,12 @@ Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enable
 - Python 3.8+
 - Bleach: Brave Souls running in windowed mode
 - Game must be visible (bot finds window by title)
+- wmctrl - Window management utility
 
 ## Setup
 
 ```bash
-sudo apt install python3 python3-pip python3-venv xdotool
+sudo apt install python3 python3-pip python3-venv xdotool wmctrl
 git clone https://github.com/yourusername/bbs_bot.git
 cd bbs_bot
 
@@ -96,19 +97,21 @@ FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
 - **Linux/X11 only** - Won't work on Windows without modification  
 - **Template dependent** - Breaks if game UI changes
 - **XTEST dependency** - Requires X11 XTEST extension (standard on most Linux systems)
+- **wmctrl compatibility** - Inconsistent behavior across desktop environments. Try DevilsPie for reliable sticky/above window control
 
 ## Current Status
 
-- **Stable**: Runs 30+ consecutive quests unattended  
-- **Performance**: 2-5 minute cycles, >95% success rate
-- **Low Interference**: Minimal focus disruption while typing
+- Runs 30+ consecutive quests unattended
+- 2-5 minute cycles, >95% success rate  
+- 10ms focus disruption window
+- Comprehensive error recovery system
 
 ## Recent Updates
 
-- ✅ **X11 Direct Clicking** - Fast window clicks with minimal focus interference
-- ✅ **Automatic Focus Restoration** - Keeps your terminal/IDE focused while bot runs
-- ✅ **GNOME/Pop!_OS Compatibility** - Optimized timing for modern Linux desktops
-- ✅ **Minimal Dependencies** - Cleaned up to only essential libraries
+- Error recovery system prevents overnight crashes
+- X11 direct clicking with 10ms interference window
+- Template delays moved outside interference window
+- Dependencies reduced to 5 essential libraries
 
 ## Future Improvements
 
