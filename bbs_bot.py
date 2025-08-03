@@ -21,7 +21,7 @@ ROOM_JOIN_CHECK_DELAY = (
 
 # === QUEST EXECUTION TIMEOUTS ===
 CHECK_RUN_START_TIMEOUT = (
-    150  # Max time to wait for quest to start (looking for auto button)
+    300  # Max time to wait for quest to start (looking for auto button) - increased for longer loading times
 )
 QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 
@@ -33,7 +33,7 @@ POPUP_DISMISS_DELAY = 2.0  # Wait after dismissing error/info popups
 SEARCH_AGAIN_DELAY = 1.5  # Wait after clicking search again before re-scanning
 TAP_PAUSE_DELAY = 5.0  # Pause between quest completion tap buttons
 SCREEN_TRANSITION_DELAY = 2.0  # Wait for screen transitions (tap2 → retry screen)
-RETRY_PAUSE_DELAY = 0.5  # Brief pause after clicking retry button
+RETRY_PAUSE_DELAY = 1  # Brief pause after clicking retry button
 
 # === POLLING AND RECOVERY DELAYS ===
 ROOM_LIST_POLL_INTERVAL = 0.5  # How often to check if room list loaded
@@ -100,7 +100,6 @@ TEMPLATES = {
 
 os.makedirs("screenshots", exist_ok=True)
 
-
 def get_game_region():
     try:
         wid = (
@@ -148,6 +147,86 @@ def screenshot_and_exit(region, tag, run_count=None):
     sys.exit(1)
 
 
+def try_state_recovery_or_exit(region, tag, run_count=None):
+    """
+    Attempt state recovery by scanning all templates.
+    Returns recovered state if found, otherwise calls screenshot_and_exit.
+    """
+    print(f"[RECOVERY] Attempting to identify current screen state...")
+    
+    # Template → State mapping for recovery
+    state_detection = [
+        # Main menu screens 
+        ("coop_quest", "MENU", "Main menu - coop quest button visible"),
+        ("open_coop_quest", "MENU", "Quest selection - specific quest visible"),
+        
+        # Room list screens  
+        ("enter_room_button", "ENTER_ROOM_LIST", "Join screen - need to enter room list"),
+        ("auto", "SCAN_ROOMS", "Room list - AUTO icons visible"), 
+        ("search_again", "SCAN_ROOMS", "Room list - search again visible"),
+        
+        # Lobby screens
+        ("ready", "READY", "Room lobby - ready button visible"),
+        
+        # In-game screens
+        ("ingame_auto_off", "CHECK_RUN_START", "Game starting - auto button OFF"),
+        ("ingame_auto_on", "RUNNING", "Game running - auto already ON"),
+        
+        # Quest completion screens
+        ("tap1", "FINISH", "Quest complete - first tap button"),
+        ("tap2", "FINISH", "Quest complete - second tap button"), 
+        ("retry", "FINISH", "Quest complete - retry button"),
+        
+        # Error/popup screens - restart from menu for safety
+        ("close", "MENU", "Error popup detected - restarting from menu"),
+        ("retire", "MENU", "Stuck in lobby - restarting from menu"),
+        ("okay", "MENU", "Confirmation dialog - restarting from menu"),
+    ]
+    
+    detected_states = []
+    
+    for template_key, target_state, description in state_detection:
+        try:
+            box = pyautogui.locateOnScreen(
+                TEMPLATES[template_key], 
+                region=region,
+                confidence=TEMPLATE_CONFIDENCE_NORMAL
+            )
+            if box:
+                detected_states.append((target_state, description, template_key))
+                print(f"[RECOVERY] Found: {description}")
+        except:
+            pass
+    
+    # Recovery decision logic
+    if not detected_states:
+        print("[RECOVERY] No known templates detected - NEW EDGE CASE")
+        screenshot_and_exit(region, tag, run_count)
+        
+    elif len(detected_states) == 1:
+        state, desc, template = detected_states[0]
+        print(f"[RECOVERY] ✅ Clear state identified: {desc}")
+        return state
+        
+    else:
+        # Multiple templates detected - use priority logic
+        print(f"[RECOVERY] Multiple templates detected ({len(detected_states)}) - using priority logic")
+        
+        # Priority order: in-game states > lobby states > menu states
+        priority_order = ["RUNNING", "CHECK_RUN_START", "FINISH", "READY", "SCAN_ROOMS", "ENTER_ROOM_LIST", "MENU"]
+        
+        for priority_state in priority_order:
+            for state, desc, template in detected_states:
+                if state == priority_state:
+                    print(f"[RECOVERY] ✅ Priority state selected: {desc}")
+                    return state
+                    
+        # Fallback (shouldn't reach here)
+        state = detected_states[0][0]
+        print(f"[RECOVERY] ⚠️ Fallback state: {state}")
+        return state
+
+
 def simple_click(x, y, description="element"):
     """X11 click with immediate focus reclaim"""
 
@@ -157,7 +236,7 @@ def simple_click(x, y, description="element"):
         window_name = "Unknown"
         try:
             current_window = subprocess.check_output(
-                ["xdotool", "getwindowfocus"], text=True
+                ["xdotool", "getactivewindow"], text=True
             ).strip()
             window_name = subprocess.check_output(
                 ["xdotool", "getwindowname", current_window], text=True
@@ -311,7 +390,7 @@ def poll_and_click(
                 confidence=TEMPLATE_CONFIDENCE_NORMAL,
             )
             if template_box:
-                # Small delay after finding template before clicking
+                # Small delay after finding template OUTSIDE interference window
                 time.sleep(TEMPLATE_FOUND_DELAY)
 
                 # Click randomly within the template bounds (guaranteed safe)
@@ -321,6 +400,7 @@ def poll_and_click(
                 random_y = random.randint(
                     template_box.top, template_box.top + template_box.height - 1
                 )
+                # Interference window: only focus restore delay (10ms)
                 simple_click(random_x, random_y, description)
                 print(
                     f"[POLL] {description} found and clicked after {elapsed_time:.1f}s"
@@ -336,7 +416,7 @@ def poll_and_click(
         print(f"[POLL] Waiting for {description}... {elapsed_time:.1f}s")
         time.sleep(interval)
 
-    # Timeout - take screenshot and return False
+    # Timeout - take screenshot and exit (keep original behavior)
     print(f"[TIMEOUT] {description} not found after {timeout}s")
     if run_count is not None:
         screenshot_and_exit(region, f"timeout_{template_key}", run_count)
@@ -599,7 +679,7 @@ if __name__ == "__main__":
                 state = "SCAN_ROOMS"
                 continue
 
-            # Step 5b: join first valid room (simplified - focus timing should make this reliable)
+            # Step 5b: join first valid room
             log_run(
                 run_count,
                 "DECISION",
@@ -635,7 +715,7 @@ if __name__ == "__main__":
                     print(
                         f"[RUN {run_count + 1}] [POPUP] Room full - closing popup and restarting from menu"
                     )
-                    # Use consistent template clicking approach
+                    # Template delay OUTSIDE interference window
                     time.sleep(TEMPLATE_FOUND_DELAY)
                     random_x = random.randint(
                         room_full_box.left, room_full_box.left + room_full_box.width - 1
@@ -643,6 +723,7 @@ if __name__ == "__main__":
                     random_y = random.randint(
                         room_full_box.top, room_full_box.top + room_full_box.height - 1
                     )
+                    # Interference window: only focus restore delay (10ms)
                     simple_click(random_x, random_y, "room full popup")
                     print(
                         f"[RUN {run_count + 1}] [WAIT] {POPUP_DISMISS_DELAY}s for popup to close..."
@@ -668,7 +749,7 @@ if __name__ == "__main__":
                     print(
                         f"[RUN {run_count + 1}] [POPUP] Room unavailable/owner disconnect - closing popup and re-scanning"
                     )
-                    # Use consistent template clicking approach
+                    # Template delay OUTSIDE interference window
                     time.sleep(TEMPLATE_FOUND_DELAY)
                     random_x = random.randint(
                         popup_close_box.left,
@@ -678,6 +759,7 @@ if __name__ == "__main__":
                         popup_close_box.top,
                         popup_close_box.top + popup_close_box.height - 1,
                     )
+                    # Interference window: only focus restore delay (10ms)
                     simple_click(random_x, random_y, "popup close")
                     print(
                         f"[RUN {run_count + 1}] [WAIT] {POPUP_DISMISS_DELAY}s for popup to close and room list to refresh..."
@@ -725,7 +807,7 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [POPUP] Room full while waiting for ready - restarting from menu"
                         )
-                        # Use consistent template clicking approach
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
                             room_full_box.left,
@@ -735,6 +817,7 @@ if __name__ == "__main__":
                             room_full_box.top,
                             room_full_box.top + room_full_box.height - 1,
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "room full popup")
                         time.sleep(POPUP_DISMISS_DELAY)
                         state = "MENU"
@@ -754,7 +837,7 @@ if __name__ == "__main__":
                         confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if ready_box:
-                        # Small delay after finding template before clicking
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
 
                         # Click randomly within the template bounds
@@ -764,6 +847,7 @@ if __name__ == "__main__":
                         random_y = random.randint(
                             ready_box.top, ready_box.top + ready_box.height - 1
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "ready button")
                         print(
                             f"[POLL] ready button found and clicked after {elapsed:.1f}s"
@@ -782,9 +866,10 @@ if __name__ == "__main__":
 
             if state == "READY":  # Still in READY state, ready button was clicked
                 if not ready_clicked:
-                    # Timeout - take screenshot and exit
-                    print(f"[TIMEOUT] ready button not found after {READY_BUTTON_TIMEOUT}s")
-                    screenshot_and_exit(region, "timeout_ready", run_count)
+                    # Timeout - attempt recovery
+                    print(f"[TIMEOUT] ready button not found after {READY_BUTTON_TIMEOUT}s - attempting recovery")
+                    state = try_state_recovery_or_exit(region, "timeout_ready", run_count)
+                    continue
 
                 # Ready to start the quest, now check if it actually started
                 log_run(run_count, "TRANSITION", "READY → CHECK_RUN_START")
@@ -813,9 +898,9 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - waiting for game to be ready..."
                         )
-                        # Wait for game to fully load before clicking auto button
+                        # Wait for game to fully load OUTSIDE interference window
                         time.sleep(INGAME_AUTO_READY_DELAY)
-                        # Use consistent delay like other buttons
+                        # Template delay OUTSIDE interference window  
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of auto button (avoid edges for circular buttons)
                         center_x = auto_off_box.left + auto_off_box.width // 2
@@ -831,6 +916,7 @@ if __name__ == "__main__":
                         )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "ingame auto off")
                         run_started = True
                         auto_found = True
@@ -874,7 +960,7 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [ERROR] Room closed by owner after {elapsed:.1f}s"
                         )
-                        # Use consistent template clicking approach
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
                             room_closed_box.left,
@@ -884,6 +970,7 @@ if __name__ == "__main__":
                             room_closed_box.top,
                             room_closed_box.top + room_closed_box.height - 1,
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "room closed popup")
                         time.sleep(RETIREMENT_STEP_DELAY)
                         print(
@@ -909,7 +996,7 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [ERROR] Disconnect popup detected after {elapsed:.1f}s"
                         )
-                        # Use consistent template clicking approach
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
                             close_btn_box.left,
@@ -919,6 +1006,7 @@ if __name__ == "__main__":
                             close_btn_box.top,
                             close_btn_box.top + close_btn_box.height - 1,
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "disconnect popup close")
                         time.sleep(DISCONNECT_RECOVERY_DELAY)
                         print(
@@ -963,7 +1051,7 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [RETIRE] Clicking retire button to leave room"
                         )
-                        # Use consistent template clicking approach
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
                             retire_btn_box.left,
@@ -973,6 +1061,7 @@ if __name__ == "__main__":
                             retire_btn_box.top,
                             retire_btn_box.top + retire_btn_box.height - 1,
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "retire button")
                         time.sleep(RETIREMENT_STEP_DELAY)
 
@@ -1008,18 +1097,20 @@ if __name__ == "__main__":
                         state = "MENU"
                     else:
                         print(
-                            f"[RUN {run_count + 1}] [ERROR] No retire button found - taking screenshot"
+                            f"[RUN {run_count + 1}] [ERROR] No retire button found - attempting recovery"
                         )
-                        screenshot_and_exit(region, "no_retire_button", run_count)
+                        state = try_state_recovery_or_exit(region, "no_retire_button", run_count)
+                        break
                 except (
                     pyscreeze.ImageNotFoundException,
                     OSError,
                     pyautogui.ImageNotFoundException,
                 ):
                     print(
-                        f"[RUN {run_count + 1}] [ERROR] Retire button not found - taking screenshot"
+                        f"[RUN {run_count + 1}] [ERROR] Retire button not found - attempting recovery"
                     )
-                    screenshot_and_exit(region, "run_start_failed", run_count)
+                    state = try_state_recovery_or_exit(region, "run_start_failed", run_count)
+                    break
 
         elif state == "RUNNING":
             log_run(run_count, "STATE", "RUNNING")
@@ -1064,7 +1155,7 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [ERROR] Network disconnect during quest after {elapsed:.1f}s"
                         )
-                        # Use consistent template clicking approach
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         random_x = random.randint(
                             close_btn_box.left,
@@ -1074,6 +1165,7 @@ if __name__ == "__main__":
                             close_btn_box.top,
                             close_btn_box.top + close_btn_box.height - 1,
                         )
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "network disconnect close")
                         print(
                             f"[RUN {run_count + 1}] [RECOVERY] Continuing quest (resume single player or restart)..."
@@ -1089,9 +1181,10 @@ if __name__ == "__main__":
                 print(f"[RUN {run_count + 1}] [QUEST] Running... {elapsed:.0f}s")
                 time.sleep(QUEST_POLL_INTERVAL)
             else:
-                # Quest timeout - screenshot and exit
-                print(f"[RUN {run_count + 1}] [ERROR] Quest timeout after 5 minutes")
-                screenshot_and_exit(region, "quest_timeout", run_count)
+                # Quest timeout - attempt recovery 
+                print(f"[RUN {run_count + 1}] [ERROR] Quest timeout after 5 minutes - attempting recovery")
+                state = try_state_recovery_or_exit(region, "quest_timeout", run_count)
+                continue
 
         elif state == "FINISH":
             log_run(run_count, "STATE", "FINISH")
@@ -1109,6 +1202,7 @@ if __name__ == "__main__":
                         confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if tap1_box:
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of tap1 button
                         center_x = tap1_box.left + tap1_box.width // 2
@@ -1123,6 +1217,7 @@ if __name__ == "__main__":
                         )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "first tap button")
                         print(
                             f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s"
@@ -1138,7 +1233,8 @@ if __name__ == "__main__":
                 time.sleep(READY_POLL_INTERVAL)
 
             if not tap1_clicked:
-                screenshot_and_exit(region, "timeout_tap1", run_count)
+                state = try_state_recovery_or_exit(region, "timeout_tap1", run_count)
+                continue
 
             log_run(run_count, "WAIT", "Brief pause after first tap...")
             time.sleep(TAP_PAUSE_DELAY)
@@ -1156,6 +1252,7 @@ if __name__ == "__main__":
                         confidence=TEMPLATE_CONFIDENCE_NORMAL,
                     )
                     if tap2_box:
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of tap2 button
                         center_x = tap2_box.left + tap2_box.width // 2
@@ -1170,6 +1267,7 @@ if __name__ == "__main__":
                         )
                         random_x = center_x + offset_x
                         random_y = center_y + offset_y
+                        # Interference window: only focus restore delay (10ms)
                         simple_click(random_x, random_y, "second tap button")
                         print(
                             f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s"
@@ -1185,7 +1283,8 @@ if __name__ == "__main__":
                 time.sleep(READY_POLL_INTERVAL)
 
             if not tap2_clicked:
-                screenshot_and_exit(region, "timeout_tap2", run_count)
+                state = try_state_recovery_or_exit(region, "timeout_tap2", run_count)
+                continue
             log_run(
                 run_count, "WAIT", "Waiting for screen transition after second tap..."
             )
@@ -1206,7 +1305,7 @@ if __name__ == "__main__":
             run_count += 1
             print(f"✅ [RUN {run_count}] Completed run #{run_count}")
             print(
-                f"[RUN {run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST (retry should go to room list)"
+                f"[RUN {run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST"
             )
             time.sleep(FINAL_PAUSE_DELAY)
             state = "ENTER_ROOM_LIST"

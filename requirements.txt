@@ -1,8 +1,10 @@
-# Core dependencies for BBS Bot
-pillow>=11.3.0
-PyAutoGUI>=0.9.54
-PyScreeze>=1.0.1
-python-xlib>=0.33
+# Core automation dependencies
+PyAutoGUI==0.9.54
+PyScreeze==1.0.1
+python3-xlib==0.15
 
-# Development tools (optional)
-ruff>=0.12.7
+# Image processing
+Pillow==11.3.0
+
+# Window management
+PyGetWindow==0.0.9
