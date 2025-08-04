@@ -24,7 +24,7 @@ Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enable
 
 ```bash
 sudo apt install python3 python3-pip python3-venv xdotool wmctrl
-git clone https://github.com/yourusername/bbs_bot.git
+git clone https://github.com/rollingferret/bbs_bot.git
 cd bbs_bot
 
 # Create virtual environment
