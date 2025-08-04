@@ -48,7 +48,7 @@ def match_autos_with_rules(autos, rules, run_count):
 - 2-5 minute cycles per quest
 - 10ms focus interference window
 - 50ms template delays
-- ~50MB RAM usage
+- ~70MB RAM usage
 
 ## Architecture Notes
 **Current**: Linear state machine with error recovery
