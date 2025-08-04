@@ -66,38 +66,30 @@ If the UI changes for future events, you'll need to update template images:
 
 ## How It Works
 
-1. **Scans room list** for AUTO-enabled rooms with valid rules
-2. **Joins rooms** and handles errors (full rooms, disconnects)
-3. **Clicks ready** and waits for quest to start
-4. **Enables AUTO** in-game if needed
-5. **Completes quest** and retries automatically
-6. **Loops forever** until you stop it (Ctrl+C)
+1. Scans room list for AUTO-enabled rooms with valid rules
+2. Joins rooms and handles errors (full rooms, disconnects)
+3. Clicks ready and waits for quest to start
+4. Enables AUTO in-game if needed
+5. Completes quest and retries automatically
+6. Loops until stopped (Ctrl+C)
 
 ## Configuration
 
-The bot has several configurable options at the top of `bbs_bot.py`:
+Configurable options at the top of `bbs_bot.py`:
 
-### Clicking Method
 ```python
-USE_X11_DIRECT_CLICKS = True  # X11 direct window clicks (minimal focus stealing)
-USE_WMCTRL_ALWAYS_ON_TOP = True  # Keep game window always visible
+USE_X11_DIRECT_CLICKS = True  # X11 direct clicks (10ms interference)
+USE_WMCTRL_ALWAYS_ON_TOP = True  # Keep game window visible
+TEMPLATE_FOUND_DELAY = 0.05  # Template detection delay
 FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
 ```
-- **X11 Mode**: Direct window clicks with automatic focus restoration
-- **PyAutoGUI Mode**: Traditional clicking that requires window focus
-
-### Timing Constants
-- `TEMPLATE_FOUND_DELAY = 0.05` - Delay after finding templates before clicking
-- `FOCUS_RESTORE_DELAY = 0.01` - Focus restoration timing after X11 clicks
-- `ROOM_LOAD_TIMEOUT = 5` - Max time to wait for room list loading
-- And many more timing controls for fine-tuning
 
 ## Known Issues
 
-- **Linux/X11 only** - Won't work on Windows without modification  
-- **Template dependent** - Breaks if game UI changes
-- **XTEST dependency** - Requires X11 XTEST extension (standard on most Linux systems)
-- **wmctrl compatibility** - Inconsistent behavior across desktop environments. Try DevilsPie for reliable sticky/above window control
+- Linux/X11 only
+- Template dependent - breaks if game UI changes
+- Requires X11 XTEST extension
+- wmctrl compatibility varies by desktop environment (try DevilsPie for reliable window control)
 
 ## Current Status
 
@@ -106,18 +98,4 @@ FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
 - 10ms focus disruption window
 - Comprehensive error recovery system
 
-## Recent Updates
-
-- Error recovery system prevents overnight crashes
-- X11 direct clicking with 10ms interference window
-- Template delays moved outside interference window
-- Dependencies reduced to 5 essential libraries
-
-## Future Improvements
-
-- **Code refactoring**: Extract repeated template detection patterns
-- **State handler functions**: Break 1000+ line main loop into readable functions  
-- **Alternative input isolation**: Explore Xephyr nested X server for complete isolation
-- **Configuration file**: Move timing constants to external config
-
-See `dev_notes.md` for technical details and solution research.
+See `dev_notes.md` for technical details.

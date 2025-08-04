@@ -33,7 +33,7 @@ POPUP_DISMISS_DELAY = 2.0  # Wait after dismissing error/info popups
 SEARCH_AGAIN_DELAY = 1.5  # Wait after clicking search again before re-scanning
 TAP_PAUSE_DELAY = 5.0  # Pause between quest completion tap buttons
 SCREEN_TRANSITION_DELAY = 2.0  # Wait for screen transitions (tap2 → retry screen)
-RETRY_PAUSE_DELAY = 1  # Brief pause after clicking retry button
+RETRY_PAUSE_DELAY = 3  # Pause after clicking retry button for game to load
 
 # === POLLING AND RECOVERY DELAYS ===
 ROOM_LIST_POLL_INTERVAL = 0.5  # How often to check if room list loaded
@@ -367,6 +367,7 @@ def poll_and_click(
     interval=0.5,
     run_count=None,
     description="element",
+    center_click=False,
 ):
     """
     Poll for a template and click it when found.
@@ -393,15 +394,31 @@ def poll_and_click(
                 # Small delay after finding template OUTSIDE interference window
                 time.sleep(TEMPLATE_FOUND_DELAY)
 
-                # Click randomly within the template bounds (guaranteed safe)
-                random_x = random.randint(
-                    template_box.left, template_box.left + template_box.width - 1
-                )
-                random_y = random.randint(
-                    template_box.top, template_box.top + template_box.height - 1
-                )
+                if center_click:
+                    # Center-focused clicking for better reliability
+                    center_x = template_box.left + template_box.width // 2
+                    center_y = template_box.top + template_box.height // 2
+                    # Small random offset from center
+                    offset_x = random.randint(
+                        -template_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                        template_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                    )
+                    offset_y = random.randint(
+                        -template_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                        template_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                    )
+                    click_x = center_x + offset_x
+                    click_y = center_y + offset_y
+                else:
+                    # Random clicking within template bounds
+                    click_x = random.randint(
+                        template_box.left, template_box.left + template_box.width - 1
+                    )
+                    click_y = random.randint(
+                        template_box.top, template_box.top + template_box.height - 1
+                    )
                 # Interference window: only focus restore delay (10ms)
-                simple_click(random_x, random_y, description)
+                simple_click(click_x, click_y, description)
                 print(
                     f"[POLL] {description} found and clicked after {elapsed_time:.1f}s"
                 )
@@ -590,6 +607,7 @@ if __name__ == "__main__":
                 timeout=10,
                 run_count=run_count,
                 description="enter room list",
+                center_click=True,
             )
             log_run(run_count, "WAIT", "Waiting for room list to load...")
             # Poll for AUTO icons to appear (indicates room list loaded)
@@ -620,8 +638,11 @@ if __name__ == "__main__":
                 time.sleep(ROOM_LIST_POLL_INTERVAL)
             else:
                 log_run(
-                    run_count, "TIMEOUT", "Room list didn't load - continuing anyway"
+                    run_count, "TIMEOUT", "Room list didn't load - checking actual screen state"
                 )
+                # Use state recovery to determine where we actually are
+                state = try_state_recovery_or_exit(region, "room_list_load_timeout", run_count)
+                continue
 
             # Additional delay to ensure room list is fully interactive
             log_run(
