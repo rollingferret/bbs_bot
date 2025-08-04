@@ -18,10 +18,15 @@ Python automation script for Bleach: Brave Souls co-op quest farming. Uses templ
 - State recovery function scans all templates to identify current screen
 - Maps templates to game states (menu, lobby, in-game)
 - Recovers from timeouts, disconnects, room closures
+- **Game restart** when stuck on loading screens (no UI elements visible)
+- **Startup navigation** sequence: game_start → close_news → coop_1 → coop_2 → MENU
 - Only exits on truly unknown screens
 
 ## State Machine Flow
 MENU → ENTER_ROOM_LIST → SCAN_ROOMS → READY → CHECK_RUN_START → RUNNING → FINISH
+                                               ↓ (loading hang)
+                                         GAME_STARTUP → MENU
+                                   (restart + navigation sequence)
 
 Recovery paths return to appropriate states based on error type.
 
@@ -42,6 +47,8 @@ def match_autos_with_rules(autos, rules, run_count):
 - Runs 30+ consecutive quests unattended
 - 10ms focus interference window with X11 direct clicking
 - Comprehensive error recovery prevents overnight crashes
+- **Game restart functionality** handles loading screen hangs
+- **Startup navigation** automatically returns to farming after restart
 - 5 essential dependencies only
 
 ## Performance

@@ -80,6 +80,13 @@ AUTO_ICON_MIN_DISTANCE = 60  # Min pixels between auto icons for dedup
 ROOM_MATCHING_WEIGHT_FACTOR = 0.1  # Horizontal weight in room proximity algorithm
 
 TEMPLATES = {
+    # Game startup navigation
+    "game_start": "images/game_start.png",
+    "close_news": "images/close_news.png", 
+    "coop_1": "images/coop-1.png",
+    "coop_2": "images/coop-2.png",
+    
+    # Normal bot operation
     "coop_quest": "images/coop_quest.png",
     "open_coop_quest": "images/open_coop_quest.png",
     "enter_room_button": "images/join_coop_quest.png",
@@ -102,28 +109,54 @@ os.makedirs("screenshots", exist_ok=True)
 
 def get_game_region():
     try:
-        wid = (
-            subprocess.check_output(
-                [
-                    "xdotool",
-                    "search",
-                    "--onlyvisible",
-                    "--name",
-                    f"^{GAME_WINDOW_TITLE}$",
-                ],
-                text=True,
-            )
-            .strip()
-            .split()[0]
-        )
-        geo_lines = subprocess.check_output(
-            ["xdotool", "getwindowgeometry", "--shell", wid], text=True
-        ).splitlines()
-        geo = {
-            k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)
-        }
+        # Find all windows with the game title
+        wids = subprocess.check_output(
+            [
+                "xdotool",
+                "search",
+                "--onlyvisible",
+                "--name",
+                f"^{GAME_WINDOW_TITLE}$",
+            ],
+            text=True,
+        ).strip().split()
+        
+        # Check each window to find the actual game process
+        for wid in wids:
+            if not wid:
+                continue
+            try:
+                # Get the process ID for this window
+                pid = subprocess.check_output(
+                    ["xdotool", "getwindowpid", wid], text=True
+                ).strip()
+                
+                # Check if this process is actually the game
+                cmdline = subprocess.check_output(
+                    ["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True
+                ).strip()
+                
+                # Look for game executable in the command line
+                if "BleachBraveSouls.exe" in cmdline or "BLEACH Brave Souls" in cmdline:
+                    # This is the real game window
+                    geo_lines = subprocess.check_output(
+                        ["xdotool", "getwindowgeometry", "--shell", wid], text=True
+                    ).splitlines()
+                    geo = {
+                        k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)
+                    }
+                    print(f"[GAME] Found game window ID: {wid} (PID: {pid})")
+                    break
+            except (subprocess.CalledProcessError, IndexError, ValueError):
+                continue
+        else:
+            # No valid game window found
+            raise Exception("No valid game process found with matching window title")
+        
     except Exception as e:
-        print("Window lookup failed:", e)
+        print(f"[ERROR] Window lookup failed: {e}")
+        print(f"[ERROR] Make sure '{GAME_WINDOW_TITLE}' is running and visible")
+        print("[ERROR] Ensure it's the actual game, not a browser tab")
         sys.exit(1)
 
     sw, sh = pyautogui.size()
@@ -137,6 +170,41 @@ def get_game_region():
 def log_run(run_count, tag, message):
     """Consistent logging with run number prefix"""
     print(f"[RUN {run_count + 1}] [{tag}] {message}")
+
+
+def restart_game_and_navigate():
+    """Restart the game when completely stuck and navigate back to co-op"""
+    print("[RESTART] Game appears stuck - restarting and navigating back...")
+    
+    # Find and kill the specific game process
+    try:
+        # Get all processes and find the game
+        ps_output = subprocess.check_output(["ps", "aux"], text=True)
+        for line in ps_output.split('\n'):
+            if "BleachBraveSouls.exe" in line or ("proton" in line.lower() and "bleach" in line.lower()):
+                try:
+                    # Extract and validate PID (second column)
+                    pid = int(line.split()[1])
+                    if pid > 0:  # Ensure positive PID
+                        print(f"[RESTART] Killing game process PID: {pid}")
+                        subprocess.run(["kill", str(pid)], check=False)
+                except (ValueError, IndexError):
+                    # Skip invalid lines
+                    continue
+    except Exception as e:
+        print(f"[RESTART] Process kill failed, trying pkill: {e}")
+        # Fallback to pkill
+        subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], check=False)
+    
+    time.sleep(5)  # Wait for cleanup
+    
+    # Restart via Steam
+    print("[RESTART] Starting game via Steam...")
+    subprocess.run(["steam", "steam://rungameid/1201240"], check=False)
+    time.sleep(15)  # Give game time to fully load
+    
+    # Return to GAME_STARTUP state to navigate back to co-op
+    return "GAME_STARTUP"
 
 
 def screenshot_and_exit(region, tag, run_count=None):
@@ -156,6 +224,12 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
     
     # Template → State mapping for recovery
     state_detection = [
+        # Game startup screens
+        ("game_start", "GAME_STARTUP", "Game startup - start button visible"),
+        ("close_news", "GAME_STARTUP", "Game startup - news popup visible"),
+        ("coop_1", "GAME_STARTUP", "Game startup - first coop navigation visible"),
+        ("coop_2", "GAME_STARTUP", "Game startup - second coop navigation visible"),
+        
         # Main menu screens 
         ("coop_quest", "MENU", "Main menu - coop quest button visible"),
         ("open_coop_quest", "MENU", "Quest selection - specific quest visible"),
@@ -555,10 +629,23 @@ def deduplicate_auto_icons(matches, min_distance=AUTO_ICON_MIN_DISTANCE):
 
 
 if __name__ == "__main__":
-    region, win_id = get_game_region()
-    print(f"Game window region: {region}")
+    # Test restart functionality - check before trying to find game window
+    TEST_RESTART = len(sys.argv) > 1 and sys.argv[1] == "--test-restart"
+    
+    if TEST_RESTART:
+        print("[TEST] Testing game restart functionality...")
+        # Don't need to find existing game window - restart will start fresh game
+        state = restart_game_and_navigate()
+        # After restart, get the new game region
+        region, win_id = get_game_region()
+        print(f"Game window region after restart: {region}")
+    else:
+        # Normal startup - find existing game window and start farming
+        region, win_id = get_game_region()
+        print(f"Game window region: {region}")
+        state = "MENU"  # Start normal farming operation
 
-    # Set up wmctrl window management if enabled
+    # Set up wmctrl window management if enabled (after we have correct win_id)
     if USE_WMCTRL_ALWAYS_ON_TOP:
         setup_wmctrl_always_on_top()
 
@@ -569,10 +656,45 @@ if __name__ == "__main__":
     print("[INFO] Press Ctrl+C to stop the bot")
 
     run_count = 0
-    state = "MENU"
 
     while True:
-        if state == "MENU":
+        if state == "GAME_STARTUP":
+            print("[STARTUP] Navigating from game startup to co-op quest screen...")
+            print("[STARTUP] Waiting 12s for game to fully initialize after restart...")
+            time.sleep(12)
+            
+            # Step 1: Click game start button
+            print("[STARTUP] Step 1: Clicking game start button")
+            success = poll_and_click("game_start", region, timeout=30, description="game start button", center_click=True)
+            if not success:
+                print("[STARTUP] [ERROR] Failed to find/click game start button!")
+                screenshot_and_exit(region, "startup_game_start_failed", run_count)
+            
+            print("[STARTUP] Waiting 8s for game to load...")
+            time.sleep(8)
+            
+            # Step 2: Close news popup
+            print("[STARTUP] Step 2: Closing news popup")
+            poll_and_click("close_news", region, timeout=30, description="close news popup")
+            print("[STARTUP] Waiting 7s for screen to load...")
+            time.sleep(7)
+            
+            # Step 3: Navigate to co-op (first button)
+            print("[STARTUP] Step 3: Navigating to co-op (first button)")
+            poll_and_click("coop_1", region, timeout=30, description="first coop navigation")
+            print("[STARTUP] Waiting 5s for coop screen to fully load and become clickable...")
+            time.sleep(5)
+            
+            # Step 4: Navigate to co-op (second button)
+            print("[STARTUP] Step 4: Navigating to co-op (second button)")
+            poll_and_click("coop_2", region, timeout=30, description="second coop navigation")
+            print("[STARTUP] Waiting 3s for screen to load...")
+            time.sleep(3)
+            
+            print("[STARTUP] Navigation complete - transitioning to normal bot operation")
+            state = "MENU"
+            
+        elif state == "MENU":
             log_run(run_count, "STATE", f"MENU - Starting run #{run_count + 1}")
             # Step 1: click main Co-op Quest banner
             log_run(run_count, "STEP", "1 - Clicking coop quest menu")
@@ -1118,9 +1240,16 @@ if __name__ == "__main__":
                         state = "MENU"
                     else:
                         print(
-                            f"[RUN {run_count + 1}] [ERROR] No retire button found - attempting recovery"
+                            f"[RUN {run_count + 1}] [ERROR] No retire button found - game likely stuck on loading screen"
                         )
-                        state = try_state_recovery_or_exit(region, "no_retire_button", run_count)
+                        print(f"[RUN {run_count + 1}] [RESTART] Restarting game to recover from loading screen hang")
+                        state = restart_game_and_navigate()
+                        # Update game region after restart
+                        region, win_id = get_game_region()
+                        print(f"[RUN {run_count + 1}] [RESTART] Updated game window region: {region}")
+                        # Re-setup wmctrl with new window ID
+                        if USE_WMCTRL_ALWAYS_ON_TOP:
+                            setup_wmctrl_always_on_top()
                         break
                 except (
                     pyscreeze.ImageNotFoundException,
