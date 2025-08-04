@@ -9,7 +9,13 @@ import pyscreeze
 from Xlib import X, display, protocol
 
 # --- CONFIGURATION ---
-GAME_WINDOW_TITLE = "Bleach: Brave Souls"
+# Validate and sanitize game window title to prevent command injection
+_RAW_TITLE = "Bleach: Brave Souls"
+# Only allow alphanumeric, spaces, colons, and common punctuation
+import re
+if not re.match(r'^[a-zA-Z0-9\s:.-]+$', _RAW_TITLE):
+    raise ValueError(f"Invalid game window title: {_RAW_TITLE}")
+GAME_WINDOW_TITLE = _RAW_TITLE
 
 # === ROOM MANAGEMENT TIMEOUTS ===
 ROOM_LOAD_TIMEOUT = 5  # Max time to wait for room list to load with AUTO icons
@@ -21,7 +27,7 @@ ROOM_JOIN_CHECK_DELAY = (
 
 # === QUEST EXECUTION TIMEOUTS ===
 CHECK_RUN_START_TIMEOUT = (
-    300  # Max time to wait for quest to start (looking for auto button) - increased for longer loading times
+    300  # Max time to wait for quest to start (looking for auto button) - balanced timeout
 )
 QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 
@@ -269,13 +275,21 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
             if box:
                 detected_states.append((target_state, description, template_key))
                 print(f"[RECOVERY] Found: {description}")
-        except:
-            pass
+        except Exception as e:
+            print(f"[RECOVERY] Warning - error scanning {template_key}: {e}")
+            # Continue to next template
     
     # Recovery decision logic
     if not detected_states:
         print("[RECOVERY] No known templates detected - NEW EDGE CASE")
-        screenshot_and_exit(region, tag, run_count)
+        print("[RECOVERY] Attempting game restart as last resort...")
+        # Take screenshot for debugging but don't exit
+        suffix = f"_run{run_count}" if run_count is not None else ""
+        path = f"screenshots/{tag}{suffix}_{int(time.time())}.png"
+        pyautogui.screenshot(region=region).save(path)
+        print(f"[RECOVERY] Screenshot saved: {path}")
+        # Return GAME_STARTUP to trigger restart instead of exiting
+        return "GAME_STARTUP"
         
     elif len(detected_states) == 1:
         state, desc, template = detected_states[0]
@@ -358,6 +372,7 @@ def simple_click(x, y, description="element"):
 
 def send_x11_click_to_window(window_id, x, y):
     """Send click using X11 send_event (working method)"""
+    disp = None
     try:
         disp = display.Display()
         window = disp.create_resource_object("window", int(window_id))
@@ -392,12 +407,15 @@ def send_x11_click_to_window(window_id, x, y):
         # Flush events
         disp.flush()
         disp.sync()
-        disp.close()
         return True
 
     except Exception as e:
         print(f"[X11] Click failed: {e}")
         return False
+    finally:
+        # Always close X11 connection to prevent resource leaks
+        if disp:
+            disp.close()
 
 
 def setup_wmctrl_always_on_top():
