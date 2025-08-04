@@ -36,6 +36,20 @@ pip install -r requirements.txt
 python3 bbs_bot.py
 ```
 
+## Usage
+
+**Normal Operation:**
+```bash
+python3 bbs_bot.py
+```
+Starts farming with existing game session.
+
+**Test Game Restart:**
+```bash
+python3 bbs_bot.py --test-restart
+```
+Kills existing game, starts fresh, and navigates back to farming. Useful for testing restart functionality.
+
 ## Template Images
 
 **Included for 10 Coop Anniversary Event:**
@@ -71,7 +85,8 @@ If the UI changes for future events, you'll need to update template images:
 3. Clicks ready and waits for quest to start
 4. Enables AUTO in-game if needed
 5. Completes quest and retries automatically
-6. Loops until stopped (Ctrl+C)
+6. **Game restart recovery** - restarts game if stuck on loading screens
+7. Loops until stopped (Ctrl+C)
 
 ## Configuration
 
@@ -97,5 +112,6 @@ FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
 - 2-5 minute cycles, >95% success rate  
 - 10ms focus disruption window
 - Comprehensive error recovery system
+- **Game restart capability** for loading screen recovery
 
 See `dev_notes.md` for technical details.
