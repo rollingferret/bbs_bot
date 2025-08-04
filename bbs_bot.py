@@ -207,7 +207,14 @@ def restart_game_and_navigate():
     # Restart via Steam
     print("[RESTART] Starting game via Steam...")
     subprocess.run(["steam", "steam://rungameid/1201240"], check=False)
-    time.sleep(15)  # Give game time to fully load
+    time.sleep(30)  # Give game plenty of time to fully load
+    
+    # Verify game actually started
+    ps_output = subprocess.check_output(["ps", "aux"], text=True)
+    if not any("BleachBraveSouls.exe" in line for line in ps_output.split('\n')):
+        print("[RESTART] Game failed to start - taking screenshot and exiting")
+        pyautogui.screenshot().save(f"screenshots/restart_failed_{int(time.time())}.png")
+        sys.exit(1)
     
     # Return to GAME_STARTUP state to navigate back to co-op
     return "GAME_STARTUP"
@@ -1463,7 +1470,7 @@ if __name__ == "__main__":
             poll_and_click(
                 "retry",
                 region,
-                timeout=10,
+                timeout=30,
                 run_count=run_count,
                 description="retry button",
             )
