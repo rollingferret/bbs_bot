@@ -1366,122 +1366,211 @@ if __name__ == "__main__":
 
         elif state == "FINISH":
             log_run(run_count, "STATE", "FINISH")
-            # Steps 8–9: tap to continue twice (center-focused clicking)
-            log_run(run_count, "STEP", "8 - First tap to continue")
+            # Quest completion sequence: tap1 → tap2 → retry
+            # Check which screen we're currently on to handle recovery scenarios
+            
+            # First, detect current screen state
+            tap1_found = False
+            tap2_found = False
+            retry_found = False
+            
+            # Initialize variables to prevent scope issues
+            tap1_box = None
+            tap2_box = None
+            retry_box = None
+            
+            try:
+                tap1_box = pyautogui.locateOnScreen(
+                    TEMPLATES["tap1"],
+                    region=region,
+                    confidence=TEMPLATE_CONFIDENCE_NORMAL,
+                )
+                if tap1_box:
+                    tap1_found = True
+            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+                pass
+            
+            try:
+                tap2_box = pyautogui.locateOnScreen(
+                    TEMPLATES["tap2"],
+                    region=region,
+                    confidence=TEMPLATE_CONFIDENCE_NORMAL,
+                )
+                if tap2_box:
+                    tap2_found = True
+            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+                pass
+                
+            try:
+                retry_box = pyautogui.locateOnScreen(
+                    TEMPLATES["retry"],
+                    region=region,
+                    confidence=TEMPLATE_CONFIDENCE_NORMAL,
+                )
+                if retry_box:
+                    retry_found = True
+            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+                pass
+            
+            # Handle based on what we found
+            if retry_found:
+                log_run(run_count, "RECOVERY", "Found retry button - skipping directly to retry")
+                # Skip directly to step 10 (retry clicking)
+            elif tap2_found:
+                log_run(run_count, "RECOVERY", "Found tap2 - skipping to second tap")
+                # Skip to step 9 (tap2)
+            elif tap1_found:
+                log_run(run_count, "STEP", "8 - First tap to continue")
+                # Normal flow - start with tap1
+                start_time = time.time()
+                tap1_clicked = False
+                
+                while time.time() - start_time < TAP1_BUTTON_TIMEOUT and not tap1_clicked:
+                    try:
+                        tap1_box = pyautogui.locateOnScreen(
+                            TEMPLATES["tap1"],
+                            region=region,
+                            confidence=TEMPLATE_CONFIDENCE_NORMAL,
+                        )
+                        if tap1_box:
+                            # Template delay OUTSIDE interference window
+                            time.sleep(TEMPLATE_FOUND_DELAY)
+                            # Click near center of tap1 button
+                            center_x = tap1_box.left + tap1_box.width // 2
+                            center_y = tap1_box.top + tap1_box.height // 2
+                            offset_x = random.randint(
+                                -tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                                tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                            )
+                            offset_y = random.randint(
+                                -tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                                tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                            )
+                            random_x = center_x + offset_x
+                            random_y = center_y + offset_y
+                            # Interference window: only focus restore delay (10ms)
+                            simple_click(random_x, random_y, "first tap button")
+                            print(
+                                f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s"
+                            )
+                            tap1_clicked = True
+                            break
+                    except (
+                        pyscreeze.ImageNotFoundException,
+                        OSError,
+                        pyautogui.ImageNotFoundException,
+                    ):
+                        pass
+                    time.sleep(READY_POLL_INTERVAL)
 
-            # Custom tap1 clicking with center focus
-            start_time = time.time()
-            tap1_clicked = False
-            while time.time() - start_time < TAP1_BUTTON_TIMEOUT and not tap1_clicked:
-                try:
-                    tap1_box = pyautogui.locateOnScreen(
-                        TEMPLATES["tap1"],
-                        region=region,
-                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
-                    )
-                    if tap1_box:
-                        # Template delay OUTSIDE interference window
-                        time.sleep(TEMPLATE_FOUND_DELAY)
-                        # Click near center of tap1 button
-                        center_x = tap1_box.left + tap1_box.width // 2
-                        center_y = tap1_box.top + tap1_box.height // 2
-                        offset_x = random.randint(
-                            -tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
-                            tap1_box.width // CENTER_CLICK_OFFSET_FACTOR,
-                        )
-                        offset_y = random.randint(
-                            -tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
-                            tap1_box.height // CENTER_CLICK_OFFSET_FACTOR,
-                        )
-                        random_x = center_x + offset_x
-                        random_y = center_y + offset_y
-                        # Interference window: only focus restore delay (10ms)
-                        simple_click(random_x, random_y, "first tap button")
-                        print(
-                            f"[POLL] first tap button found and clicked after {time.time() - start_time:.1f}s"
-                        )
-                        tap1_clicked = True
-                        break
-                except (
-                    pyscreeze.ImageNotFoundException,
-                    OSError,
-                    pyautogui.ImageNotFoundException,
-                ):
-                    pass
-                time.sleep(READY_POLL_INTERVAL)
+                if not tap1_clicked:
+                    state = try_state_recovery_or_exit(region, "timeout_tap1", run_count)
+                    continue
 
-            if not tap1_clicked:
-                state = try_state_recovery_or_exit(region, "timeout_tap1", run_count)
+                log_run(run_count, "WAIT", "Brief pause after first tap...")
+                time.sleep(TAP_PAUSE_DELAY)
+            else:
+                # No tap buttons or retry found - go to recovery
+                state = try_state_recovery_or_exit(region, "no_finish_buttons", run_count)
                 continue
 
-            log_run(run_count, "WAIT", "Brief pause after first tap...")
-            time.sleep(TAP_PAUSE_DELAY)
-
-            log_run(run_count, "STEP", "9 - Second tap to continue")
-
-            # Custom tap2 clicking with center focus
-            start_time = time.time()
-            tap2_clicked = False
-            while time.time() - start_time < TAP2_BUTTON_TIMEOUT and not tap2_clicked:
-                try:
-                    tap2_box = pyautogui.locateOnScreen(
-                        TEMPLATES["tap2"],
-                        region=region,
-                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
-                    )
-                    if tap2_box:
-                        # Template delay OUTSIDE interference window
-                        time.sleep(TEMPLATE_FOUND_DELAY)
-                        # Click near center of tap2 button
-                        center_x = tap2_box.left + tap2_box.width // 2
-                        center_y = tap2_box.top + tap2_box.height // 2
-                        offset_x = random.randint(
-                            -tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
-                            tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
+            # Step 9: Handle tap2 (unless we're skipping to retry)
+            if not retry_found:
+                log_run(run_count, "STEP", "9 - Second tap to continue")
+                # Custom tap2 clicking with center focus
+                start_time = time.time()
+                tap2_clicked = False
+                while time.time() - start_time < TAP2_BUTTON_TIMEOUT and not tap2_clicked:
+                    try:
+                        tap2_box = pyautogui.locateOnScreen(
+                            TEMPLATES["tap2"],
+                            region=region,
+                            confidence=TEMPLATE_CONFIDENCE_NORMAL,
                         )
-                        offset_y = random.randint(
-                            -tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
-                            tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
-                        )
-                        random_x = center_x + offset_x
-                        random_y = center_y + offset_y
-                        # Interference window: only focus restore delay (10ms)
-                        simple_click(random_x, random_y, "second tap button")
-                        print(
-                            f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s"
-                        )
-                        tap2_clicked = True
-                        break
-                except (
-                    pyscreeze.ImageNotFoundException,
-                    OSError,
-                    pyautogui.ImageNotFoundException,
-                ):
-                    pass
-                time.sleep(READY_POLL_INTERVAL)
+                        if tap2_box:
+                            # Template delay OUTSIDE interference window
+                            time.sleep(TEMPLATE_FOUND_DELAY)
+                            # Click near center of tap2 button
+                            center_x = tap2_box.left + tap2_box.width // 2
+                            center_y = tap2_box.top + tap2_box.height // 2
+                            offset_x = random.randint(
+                                -tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                                tap2_box.width // CENTER_CLICK_OFFSET_FACTOR,
+                            )
+                            offset_y = random.randint(
+                                -tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                                tap2_box.height // CENTER_CLICK_OFFSET_FACTOR,
+                            )
+                            random_x = center_x + offset_x
+                            random_y = center_y + offset_y
+                            # Interference window: only focus restore delay (10ms)
+                            simple_click(random_x, random_y, "second tap button")
+                            print(
+                                f"[POLL] second tap button found and clicked after {time.time() - start_time:.1f}s"
+                            )
+                            tap2_clicked = True
+                            break
+                    except (
+                        pyscreeze.ImageNotFoundException,
+                        OSError,
+                        pyautogui.ImageNotFoundException,
+                    ):
+                        pass
+                    time.sleep(READY_POLL_INTERVAL)
 
-            if not tap2_clicked:
-                state = try_state_recovery_or_exit(region, "timeout_tap2", run_count)
-                continue
-            log_run(
-                run_count, "WAIT", "Waiting for screen transition after second tap..."
-            )
-            time.sleep(SCREEN_TRANSITION_DELAY)
+                if not tap2_clicked:
+                    state = try_state_recovery_or_exit(region, "timeout_tap2", run_count)
+                    continue
+                log_run(
+                    run_count, "WAIT", "Waiting for screen transition after second tap..."
+                )
+                time.sleep(SCREEN_TRANSITION_DELAY)
 
             # Step 10: retry to loop back
             log_run(run_count, "STEP", "10 - Clicking retry for next run")
-            poll_and_click(
-                "retry",
-                region,
-                timeout=30,
-                run_count=run_count,
-                description="retry button",
-            )
+            # Use recovery-aware retry clicking instead of poll_and_click
+            start_time = time.time()
+            retry_clicked = False
+            while time.time() - start_time < 30 and not retry_clicked:
+                try:
+                    retry_box = pyautogui.locateOnScreen(
+                        TEMPLATES["retry"],
+                        region=region,
+                        confidence=TEMPLATE_CONFIDENCE_NORMAL,
+                    )
+                    if retry_box:
+                        # Template delay OUTSIDE interference window
+                        time.sleep(TEMPLATE_FOUND_DELAY)
+                        # Click retry button
+                        click_x = random.randint(
+                            retry_box.left, retry_box.left + retry_box.width - 1
+                        )
+                        click_y = random.randint(
+                            retry_box.top, retry_box.top + retry_box.height - 1
+                        )
+                        simple_click(click_x, click_y, "retry button")
+                        print(
+                            f"[POLL] retry button found and clicked after {time.time() - start_time:.1f}s"
+                        )
+                        retry_clicked = True
+                        break
+                except (
+                    pyscreeze.ImageNotFoundException,
+                    OSError,
+                    pyautogui.ImageNotFoundException,
+                ):
+                    pass
+                time.sleep(0.5)
+            
+            if not retry_clicked:
+                # Use recovery instead of crashing
+                state = try_state_recovery_or_exit(region, "timeout_retry", run_count)
+                continue
             log_run(run_count, "WAIT", "Brief pause after retry...")
             time.sleep(RETRY_PAUSE_DELAY)
 
+            print(f"✅ [RUN {run_count + 1}] Completed run #{run_count + 1}")
             run_count += 1
-            print(f"✅ [RUN {run_count}] Completed run #{run_count}")
             print(
                 f"[RUN {run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST"
             )
