@@ -34,6 +34,9 @@ QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 # === ROOM MATCHING CONFIG ===
 MAX_RULE_DISTANCE = 100  # Max pixel distance to match AUTO icon with Room Rules
 
+# === GAME STARTUP TIMEOUTS ===
+GAME_START_BUTTON_TIMEOUT = 90  # Max time to wait for game start button after restart
+
 # === UI INTERACTION DELAYS ===
 POPUP_DISMISS_DELAY = 2.0  # Wait after dismissing error/info popups
 SEARCH_AGAIN_DELAY = 1.5  # Wait after clicking search again before re-scanning
@@ -295,8 +298,8 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
         path = f"screenshots/{tag}{suffix}_{int(time.time())}.png"
         pyautogui.screenshot(region=region).save(path)
         print(f"[RECOVERY] Screenshot saved: {path}")
-        # Return GAME_STARTUP to trigger restart instead of exiting
-        return "GAME_STARTUP"
+        # Actually restart the game instead of just returning a state
+        return restart_game_and_navigate()
         
     elif len(detected_states) == 1:
         state, desc, template = detected_states[0]
@@ -690,7 +693,7 @@ if __name__ == "__main__":
             
             # Step 1: Click game start button
             print("[STARTUP] Step 1: Clicking game start button")
-            success = poll_and_click("game_start", region, timeout=30, description="game start button", center_click=True)
+            success = poll_and_click("game_start", region, timeout=GAME_START_BUTTON_TIMEOUT, description="game start button", center_click=True)
             if not success:
                 print("[STARTUP] [ERROR] Failed to find/click game start button!")
                 screenshot_and_exit(region, "startup_game_start_failed", run_count)
