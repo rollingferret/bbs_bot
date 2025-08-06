@@ -182,7 +182,7 @@ def log_run(run_count, tag, message):
 
 
 def restart_game_and_navigate():
-    """Restart the game when completely stuck and navigate back to co-op"""
+    """Restart the game, find the new window, and return its details."""
     print("[RESTART] Game appears stuck - restarting and navigating back...")
     
     # Find and kill the specific game process
@@ -207,9 +207,15 @@ def restart_game_and_navigate():
     
     time.sleep(5)  # Wait for cleanup
     
-    # Restart via Steam
-    print("[RESTART] Starting game via Steam...")
-    subprocess.run(["steam", "steam://rungameid/1201240"], check=False)
+    # Restart via Steam in a non-blocking way
+    print("[RESTART] Starting game via Steam (non-blocking)...")
+    subprocess.Popen(
+        ["steam", "-applaunch", "1201240"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    
+    print("[RESTART] Waiting 30s for game to appear...")
     time.sleep(30)  # Give game plenty of time to fully load
     
     # Verify game actually started
@@ -218,9 +224,15 @@ def restart_game_and_navigate():
         print("[RESTART] Game failed to start - taking screenshot and exiting")
         pyautogui.screenshot().save(f"screenshots/restart_failed_{int(time.time())}.png")
         sys.exit(1)
+        
+    # Re-discover the new window and return all necessary state
+    print("[RESTART] Re-discovering game window...")
+    new_region, new_win_id = get_game_region()
+    print(f"[RESTART] New window ID: {new_win_id}, region: {new_region}")
     
-    # Return to GAME_STARTUP state to navigate back to co-op
-    return "GAME_STARTUP"
+    # Return all the state needed by the main loop
+    return new_region, new_win_id, "GAME_STARTUP"
+
 
 
 def screenshot_and_exit(region, tag, run_count=None):
@@ -298,8 +310,8 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
         path = f"screenshots/{tag}{suffix}_{int(time.time())}.png"
         pyautogui.screenshot(region=region).save(path)
         print(f"[RECOVERY] Screenshot saved: {path}")
-        # Actually restart the game instead of just returning a state
-        return restart_game_and_navigate()
+        # Signal that a restart is needed
+        return "RESTART_GAME"
         
     elif len(detected_states) == 1:
         state, desc, template = detected_states[0]
@@ -662,10 +674,8 @@ if __name__ == "__main__":
     
     if TEST_RESTART:
         print("[TEST] Testing game restart functionality...")
-        # Don't need to find existing game window - restart will start fresh game
-        state = restart_game_and_navigate()
-        # After restart, get the new game region
-        region, win_id = get_game_region()
+        # Perform the restart and get the new window details and state
+        region, win_id, state = restart_game_and_navigate()
         print(f"Game window region after restart: {region}")
     else:
         # Normal startup - find existing game window and start farming
@@ -686,6 +696,12 @@ if __name__ == "__main__":
     run_count = 0
 
     while True:
+        if state == "RESTART_GAME":
+            region, win_id, state = restart_game_and_navigate()
+            if USE_WMCTRL_ALWAYS_ON_TOP:
+                setup_wmctrl_always_on_top()
+            continue
+
         if state == "GAME_STARTUP":
             print("[STARTUP] Navigating from game startup to co-op quest screen...")
             print("[STARTUP] Waiting 12s for game to fully initialize after restart...")
@@ -1271,13 +1287,7 @@ if __name__ == "__main__":
                             f"[RUN {run_count + 1}] [ERROR] No retire button found - game likely stuck on loading screen"
                         )
                         print(f"[RUN {run_count + 1}] [RESTART] Restarting game to recover from loading screen hang")
-                        state = restart_game_and_navigate()
-                        # Update game region after restart
-                        region, win_id = get_game_region()
-                        print(f"[RUN {run_count + 1}] [RESTART] Updated game window region: {region}")
-                        # Re-setup wmctrl with new window ID
-                        if USE_WMCTRL_ALWAYS_ON_TOP:
-                            setup_wmctrl_always_on_top()
+                        state = "RESTART_GAME"
                         break
                 except (
                     pyscreeze.ImageNotFoundException,
