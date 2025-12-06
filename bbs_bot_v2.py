@@ -26,7 +26,7 @@ class BBSBot:
         self.QUEST_MAX_TIME = 300
         self.GAME_START_BUTTON_TIMEOUT = 90
         self.POPUP_DISMISS_DELAY = 3.0
-        self.SEARCH_AGAIN_DELAY = 1.5
+        self.SEARCH_AGAIN_DELAY = 2.0
         self.TAP_PAUSE_DELAY = 5.0
         self.SCREEN_TRANSITION_DELAY = 2.0
         self.RETRY_PAUSE_DELAY = 3
@@ -51,7 +51,7 @@ class BBSBot:
         self.USE_X11_DIRECT_CLICKS = True
 
         # === TEMPLATE MATCHING ===
-        self.TEMPLATE_FOUND_DELAY = 0.05
+        self.CLICK_SOAK_DELAY = 0.5 # How long to wait after finding an image before clicking it.
         self.INGAME_AUTO_READY_DELAY = 1.5
         self.FOCUS_RESTORE_DELAY = 0.01
         self.TEMPLATE_CONFIDENCE_HIGH = 0.95
@@ -91,6 +91,8 @@ class BBSBot:
         self.win_id = None
         self.run_count = 0
         self.state = "MENU"
+        self.restart_attempts = 0
+        self.MAX_RESTARTS = 3
     
     def get_game_region(self):
         try:
@@ -471,7 +473,8 @@ class BBSBot:
             self.screenshot_and_exit(f"missing_{template_key}")
 
         # No noisy logging for quick, internal-only polls
-        if not only_poll: print(f"[POLL] Looking for {description} (timeout: {timeout}s)")
+        if not only_poll:
+            print(f"[POLL] Looking for {description} (timeout: {timeout}s)")
         
         start_time = time.time()
 
@@ -490,7 +493,7 @@ class BBSBot:
                         return True
                     
                     print(f"[POLL] {description} found after {elapsed_time:.1f}s")
-                    time.sleep(self.TEMPLATE_FOUND_DELAY)
+                    time.sleep(self.CLICK_SOAK_DELAY)
 
                     if center_click:
                         center_x = template_box.left + template_box.width // 2
@@ -512,8 +515,7 @@ class BBSBot:
             time.sleep(sleep_interval)
 
         if not only_poll:
-            print(f"[TIMEOUT] {description} not found after {timeout}s")
-            self.screenshot_and_exit(f"timeout_{template_key}")
+            self.log_run("TIMEOUT", f"{description} not found after {timeout}s")
         
         return False
 
@@ -691,6 +693,12 @@ class BBSBot:
             self.log_run("STATE", f"Current state: {self.state}")
 
             if self.state == "RESTART_GAME":
+                self.restart_attempts += 1
+                if self.restart_attempts > self.MAX_RESTARTS:
+                    self.log_run("FATAL", f"Maximum restart attempts ({self.MAX_RESTARTS}) reached. Exiting.")
+                    self.screenshot_and_exit("max_restarts_reached")
+
+                self.log_run("RESTART", f"Attempt #{self.restart_attempts} of {self.MAX_RESTARTS}...")
                 self.state, game_start_box = self.restart_game_and_navigate()
                 continue
             
@@ -707,28 +715,34 @@ class BBSBot:
                         "game start button"
                     )
                     game_start_box = None # Reset after use
-                    success = True
                 else:
-                    success = self.poll_and_click("game_start", timeout=self.GAME_START_BUTTON_TIMEOUT, description="game start button", center_click=True)
-                
-                if not success:
-                    self.log_run("STARTUP", "[ERROR] Failed to find/click game start button!")
-                    self.screenshot_and_exit("startup_game_start_failed")
-                
+                    if not self.poll_and_click("game_start", timeout=self.GAME_START_BUTTON_TIMEOUT, description="game start button", center_click=True):
+                        self.state = self.try_state_recovery_or_exit("timeout_game_start")
+                        continue
+
                 # Step 2: Close news popup
                 self.log_run("STARTUP", "Step 2: Closing news popup")
-                self.poll_and_click("close_news", timeout=30, description="close news popup")
+                if not self.poll_and_click("close_news", timeout=30, description="close news popup"):
+                    self.state = self.try_state_recovery_or_exit("timeout_close_news")
+                    continue
+                
                 self.log_run("STARTUP", "Waiting 7s for screen to load...")
                 time.sleep(7)
                 
+                # Step 3: Navigate to co-op (first button)
                 self.log_run("STARTUP", "Step 3: Navigating to co-op (first button)")
-                self.poll_and_click("coop_1", timeout=30, description="first coop navigation")
+                if not self.poll_and_click("coop_1", timeout=30, description="first coop navigation"):
+                    self.state = self.try_state_recovery_or_exit("timeout_coop_1")
+                    continue
+
                 self.log_run("STARTUP", "Waiting 1s for coop screen to load...")
                 time.sleep(1)
                 
                 # Step 4: Navigate to co-op (second button)
                 self.log_run("STARTUP", "Step 4: Navigating to co-op (second button)")
-                self.poll_and_click("coop_2", timeout=30, description="second coop navigation")
+                if not self.poll_and_click("coop_2", timeout=30, description="second coop navigation"):
+                    self.state = self.try_state_recovery_or_exit("timeout_coop_2")
+                    continue
                 self.log_run("STARTUP", "Waiting 3s for screen to load...")
                 time.sleep(3)
                 
@@ -785,12 +799,14 @@ class BBSBot:
                 self.log_run("STATE", "ENTER_ROOM_LIST")
                 # Step 3: Enter room list
                 self.log_run("STEP", "3 - Entering room list")
-                self.poll_and_click(
+                if not self.poll_and_click(
                     "enter_room_button",
                     timeout=10,
                     description="enter room list",
                     center_click=True,
-                )
+                ):
+                    self.state = self.try_state_recovery_or_exit("timeout_enter_room_button")
+                    continue
                 self.log_run("WAIT", "Waiting for room list to load...")
                 # Poll for AUTO icons to appear (indicates room list loaded)
                 start_time = time.time()
@@ -862,11 +878,14 @@ class BBSBot:
                 # Step 5a: if none valid → search again
                 if not valid_rooms:
                     self.log_run("DECISION", "No valid rooms found - searching again")
-                    self.poll_and_click(
+                    if not self.poll_and_click(
                         "search_again",
                         timeout=10,
                         description="search again button",
-                    )
+                    ):
+                        self.state = self.try_state_recovery_or_exit("timeout_search_again")
+                        continue
+                    
                     self.log_run(
                         "WAIT", f"{self.SEARCH_AGAIN_DELAY}s for new room list..."
                     )
@@ -913,8 +932,7 @@ class BBSBot:
 
                 # Now, react based on the verified outcome
                 if outcome == "success":
-                    self.log_run("SUCCESS", f"Room joined - waiting {self.LOBBY_LOAD_DELAY}s for lobby to load...")
-                    time.sleep(self.LOBBY_LOAD_DELAY)
+                    self.log_run("SUCCESS", "Room joined successfully.")
                     self.state = "READY"
                 elif outcome == "room_full":
                     self.log_run("POPUP", "Room was full. Closing popup and restarting from menu.")
@@ -956,7 +974,7 @@ class BBSBot:
                                 f"[RUN {self.run_count + 1}] [POPUP] Room full while waiting for ready - restarting from menu"
                             )
                             # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             random_x = random.randint(
                                 room_full_box.left,
                                 room_full_box.left + room_full_box.width - 1,
@@ -985,23 +1003,24 @@ class BBSBot:
                             confidence=self.TEMPLATE_CONFIDENCE_NORMAL,
                         )
                         if ready_box:
-                            # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            self.log_run("ACTION", "Found 'Ready' button, waiting 2s before click...")
+                            time.sleep(2.0) # Wait for button to be interactive
 
-                            # Click randomly within the template bounds
-                            random_x = random.randint(
-                                ready_box.left, ready_box.left + ready_box.width - 1
+                            # Click the button
+                            self.simple_click(
+                                ready_box.left + ready_box.width // 2, 
+                                ready_box.top + ready_box.height // 2, 
+                                "ready button"
                             )
-                            random_y = random.randint(
-                                ready_box.top, ready_box.top + ready_box.height - 1
-                            )
-                            # Interference window: only focus restore delay (10ms)
-                            self.simple_click(random_x, random_y, "ready button")
-                            print(
-                                f"[POLL] ready button found and clicked after {elapsed:.1f}s"
-                            )
-                            ready_clicked = True
-                            break
+
+                            # Verify the click by polling for the button to disappear
+                            if self.poll_for_invisibility("ready", timeout=5, description="'Ready' button to disappear"):
+                                self.log_run("SUCCESS", "'Ready' button click verified.")
+                                ready_clicked = True
+                                break # Exit the while loop
+                            else:
+                                self.log_run("ERROR", "Ready button still visible after click. Retrying...")
+                                # Let the loop continue to try clicking again
                     except (
                         pyscreeze.ImageNotFoundException,
                         OSError,
@@ -1012,10 +1031,10 @@ class BBSBot:
                     print(f"[POLL] Waiting for ready button... {elapsed:.1f}s")
                     time.sleep(self.READY_POLL_INTERVAL)
 
-                if self.state == "READY":  # Still in READY state, ready button was clicked
+                if self.state == "READY":  # Still in READY state, ready button was not clicked in the loop
                     if not ready_clicked:
                         # Timeout - attempt recovery
-                        print(f"[TIMEOUT] ready button not found after {self.READY_BUTTON_TIMEOUT}s - attempting recovery")
+                        self.log_run("TIMEOUT", f"ready button not found after {self.READY_BUTTON_TIMEOUT}s - attempting recovery")
                         self.state = self.try_state_recovery_or_exit("timeout_ready")
                         continue
 
@@ -1050,7 +1069,7 @@ class BBSBot:
                             # Wait for game to fully load OUTSIDE interference window
                             time.sleep(self.INGAME_AUTO_READY_DELAY)
                             # Template delay OUTSIDE interference window  
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             # Click near center of auto button (avoid edges for circular buttons)
                             center_x = auto_off_box.left + auto_off_box.width // 2
                             center_y = auto_off_box.top + auto_off_box.height // 2
@@ -1110,7 +1129,7 @@ class BBSBot:
                                 f"[RUN {self.run_count + 1}] [ERROR] Room closed by owner after {elapsed:.1f}s"
                             )
                             # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             random_x = random.randint(
                                 room_closed_box.left,
                                 room_closed_box.left + room_closed_box.width - 1,
@@ -1146,7 +1165,7 @@ class BBSBot:
                                 f"[RUN {self.run_count + 1}] [ERROR] Disconnect popup detected after {elapsed:.1f}s"
                             )
                             # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             random_x = random.randint(
                                 close_btn_box.left,
                                 close_btn_box.left + close_btn_box.width - 1,
@@ -1200,7 +1219,7 @@ class BBSBot:
                                 f"[RUN {self.run_count + 1}] [RETIRE] Clicking retire button to leave room"
                             )
                             # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             random_x = random.randint(
                                 retire_btn_box.left,
                                 retire_btn_box.left + retire_btn_box.width - 1,
@@ -1214,25 +1233,27 @@ class BBSBot:
                             time.sleep(self.RETIREMENT_STEP_DELAY)
 
                             # Click okay to confirm retirement
-                            print(
-                                f"[RUN {self.run_count + 1}] [RETIRE] Looking for okay confirmation button..."
-                            )
-                            self.poll_and_click(
+                            self.log_run("RETIRE", "Looking for okay confirmation button...")
+                            if not self.poll_and_click(
                                 "okay",
                                 timeout=10,
                                 description="okay confirmation",
-                            )
+                            ):
+                                self.state = self.try_state_recovery_or_exit("timeout_retire_okay")
+                                break
+                            
                             time.sleep(self.RETIREMENT_STEP_DELAY)
 
                             # Click final confirmation popup (closed_room_coop_quest_menu)
-                            print(
-                                f"[RUN {self.run_count + 1}] [RETIRE] Looking for final confirmation popup..."
-                            )
-                            self.poll_and_click(
+                            self.log_run("RETIRE", "Looking for final confirmation popup...")
+                            if not self.poll_and_click(
                                 "closed_room_coop_quest_menu",
                                 timeout=10,
                                 description="final retire confirmation",
-                            )
+                            ):
+                                self.state = self.try_state_recovery_or_exit("timeout_final_retire_confirm")
+                                break
+                            
                             time.sleep(self.RETIREMENT_STEP_DELAY)
 
                             print(
@@ -1302,7 +1323,7 @@ class BBSBot:
                                 f"[RUN {self.run_count + 1}] [ERROR] Network disconnect during quest after {elapsed:.1f}s"
                             )
                             # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
+                            time.sleep(self.CLICK_SOAK_DELAY)
                             random_x = random.randint(
                                 close_btn_box.left,
                                 close_btn_box.left + close_btn_box.width - 1,
@@ -1403,7 +1424,7 @@ class BBSBot:
                             )
                             if tap1_box:
                                 # Template delay OUTSIDE interference window
-                                time.sleep(self.TEMPLATE_FOUND_DELAY)
+                                time.sleep(self.CLICK_SOAK_DELAY)
                                 # Click near center of tap1 button
                                 center_x = tap1_box.left + tap1_box.width // 2
                                 center_y = tap1_box.top + tap1_box.height // 2
@@ -1458,7 +1479,7 @@ class BBSBot:
                             )
                             if tap2_box:
                                 # Template delay OUTSIDE interference window
-                                time.sleep(self.TEMPLATE_FOUND_DELAY)
+                                time.sleep(self.CLICK_SOAK_DELAY)
                                 # Click near center of tap2 button
                                 center_x = tap2_box.left + tap2_box.width // 2
                                 center_y = tap2_box.top + tap2_box.height // 2
@@ -1486,7 +1507,7 @@ class BBSBot:
                         ):
                             pass
                         time.sleep(self.READY_POLL_INTERVAL)
-
+                    
                     if not tap2_clicked:
                         self.state = self.try_state_recovery_or_exit("timeout_tap2")
                         continue
@@ -1497,49 +1518,16 @@ class BBSBot:
 
                 # Step 10: retry to loop back
                 self.log_run("STEP", "10 - Clicking retry for next run")
-                # Use recovery-aware retry clicking instead of poll_and_click
-                start_time = time.time()
-                retry_clicked = False
-                while time.time() - start_time < 30 and not retry_clicked:
-                    try:
-                        retry_box = pyautogui.locateOnScreen(
-                            self.TEMPLATES["retry"],
-                            region=self.region,
-                            confidence=self.TEMPLATE_CONFIDENCE_NORMAL,
-                        )
-                        if retry_box:
-                            # Template delay OUTSIDE interference window
-                            time.sleep(self.TEMPLATE_FOUND_DELAY)
-                            # Click retry button
-                            click_x = random.randint(
-                                retry_box.left, retry_box.left + retry_box.width - 1
-                            )
-                            click_y = random.randint(
-                                retry_box.top, retry_box.top + retry_box.height - 1
-                            )
-                            self.simple_click(click_x, click_y, "retry button")
-                            print(
-                                f"[POLL] retry button found and clicked after {time.time() - start_time:.1f}s"
-                            )
-                            retry_clicked = True
-                            break
-                    except (
-                        pyscreeze.ImageNotFoundException,
-                        OSError,
-                        pyautogui.ImageNotFoundException,
-                    ):
-                        pass
-                    time.sleep(0.5)
-                
-                if not retry_clicked:
-                    # Use recovery instead of crashing
+                if not self.poll_and_click("retry", timeout=30, description="retry button"):
                     self.state = self.try_state_recovery_or_exit("timeout_retry")
                     continue
+                
                 self.log_run("WAIT", "Brief pause after retry...")
                 time.sleep(self.RETRY_PAUSE_DELAY)
 
                 print(f"✅ [RUN {self.run_count + 1}] Completed run #{self.run_count + 1}")
                 self.run_count += 1
+                self.restart_attempts = 0 # Reset restart counter on a successful run
                 print(
                     f"[RUN {self.run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST"
                 )
