@@ -188,6 +188,18 @@ class BBSBot:
         print(f"[FAIL] {tag}{suffix} → saved {path}")
         sys.exit(1)
 
+    def take_debug_screenshot(self, tag):
+        """Captures a screenshot for debugging purposes without exiting."""
+        suffix = f"_run{self.run_count + 1}_debug"
+        path = f"screenshots/{tag}{suffix}_{int(time.time())}.png"
+        try:
+            pyautogui.screenshot(region=self.region).save(path)
+            print(f"[DEBUG_SCREENSHOT] {tag} → saved {path}")
+        except Exception as e:
+            print(f"[DEBUG_SCREENSHOT] Failed to save screenshot for {tag}: {e}")
+
+
+
     def restart_game_and_navigate(self):
         print("[RESTART] Game appears stuck - restarting and navigating back...")
 
@@ -497,11 +509,14 @@ class BBSBot:
             subprocess.run(
                 ["wmctrl", "-r", self.GAME_WINDOW_TITLE, "-b", "add,sticky,above"],
                 check=True,
-                stderr=subprocess.DEVNULL,
+                capture_output=True, # Capture output
+                text=True,           # Decode as text
             )
             print("[WMCTRL] Game window set to sticky and always on top")
+        except subprocess.CalledProcessError as e:
+            print(f"[WMCTRL] Failed to set window sticky/above: {e.stderr.strip()}")
         except Exception as e:
-            print(f"[WMCTRL] Failed to set window sticky/above: {e}")
+            print(f"[WMCTRL] Unexpected error setting window sticky/above: {e}")
 
     def focus_game_window(self):
         """Focus game window for reliable clicking (no logging during interference window)"""
@@ -813,17 +828,18 @@ class BBSBot:
         if TEST_RESTART:
             self.state, game_start_box = self.restart_game_and_navigate()
         else:
-            self.get_game_region()
             self.state = "MENU"
 
-        if self.USE_WMCTRL_ALWAYS_ON_TOP:
-            self.setup_wmctrl_always_on_top()
-
-        print(f"[SETUP] Bot ready. Game window region: {self.region}")
+        print(f"[WMCTRL_DEBUG] Attempting to set window properties for ID: {self.win_id} with title: '{self.GAME_WINDOW_TITLE}'")
         print("[INFO] Press Ctrl+C to stop the bot")
 
         last_processed_state = None  # Track state from previous iteration
         while True:
+            # Periodically re-discover game region and ID to handle window movement
+            # and ensure wmctrl has the latest window ID.
+            self.get_game_region()
+            if self.USE_WMCTRL_ALWAYS_ON_TOP:
+                self.setup_wmctrl_always_on_top()
             # --- MODIFICATION START ---
             # Check for stuck state at the beginning of each loop iteration
             if (
@@ -866,6 +882,7 @@ class BBSBot:
             self.log_run("STATE", f"Current state: {self.state}")
 
             if self.state == "RESTART_GAME":
+                self.take_debug_screenshot("state_RESTART_GAME_entry")
                 self.restart_attempts += 1
                 if self.restart_attempts > self.MAX_RESTARTS:
                     self.log_run(
@@ -890,6 +907,7 @@ class BBSBot:
                 continue
 
             elif self.state == "GAME_STARTUP":
+                self.take_debug_screenshot("state_GAME_STARTUP_entry")
                 self.log_run(
                     "STARTUP", "Navigating from game startup to co-op quest screen..."
                 )
@@ -962,6 +980,7 @@ class BBSBot:
                 continue
 
             elif self.state == "MENU":
+                self.take_debug_screenshot("state_MENU_entry")
                 self.log_run("STATE", f"MENU - Starting run #{self.run_count + 1}")
 
                 # Step 1: Repeatedly click the main Co-op Quest banner until the specific quest is visible.
@@ -1033,6 +1052,7 @@ class BBSBot:
                 continue
 
             elif self.state == "ENTER_ROOM_LIST":
+                self.take_debug_screenshot("state_ENTER_ROOM_LIST_entry")
                 self.log_run("STATE", "ENTER_ROOM_LIST")
                 # Step 3: Enter room list
                 self.log_run("STEP", "3 - Entering room list")
@@ -1094,6 +1114,7 @@ class BBSBot:
                 continue
 
             elif self.state == "SCAN_ROOMS":
+                self.take_debug_screenshot("state_SCAN_ROOMS_entry")
                 self.log_run("STATE", "SCAN_ROOMS")
                 # Step 4: Find all AUTO icons and Room Rules, then match them
                 self.log_run("STEP", "4 - Scanning for AUTO icons and Room Rules")
@@ -1209,6 +1230,7 @@ class BBSBot:
                 continue
 
             elif self.state == "READY":
+                self.take_debug_screenshot("state_READY_entry")
                 self.log_run("STATE", "READY")
                 # Step 6: Click ready button (lobby should be loaded now)
                 self.log_run("STEP", "6 - Clicking ready button")
@@ -1322,6 +1344,7 @@ class BBSBot:
                 continue
 
             elif self.state == "CHECK_RUN_START":
+                self.take_debug_screenshot("state_CHECK_RUN_START_entry")
                 self.log_run("STATE", "CHECK_RUN_START")
                 self.log_run("STEP", "6.5 - Checking if run actually started...")
 
@@ -1563,6 +1586,7 @@ class BBSBot:
                 continue
 
             elif self.state == "RUNNING":
+                self.take_debug_screenshot("state_RUNNING_entry")
                 self.log_run("STATE", "RUNNING")
                 # Step 7: Poll for quest completion (tap1 button)
                 self.log_run("STEP", "7 - Quest started - waiting for completion...")
@@ -1646,6 +1670,7 @@ class BBSBot:
                 continue
 
             elif self.state == "FINISH":
+                self.take_debug_screenshot("state_FINISH_entry")
                 self.log_run("STATE", "FINISH")
                 # Quest completion sequence: tap1 → tap2 → retry
                 # Check which screen we're currently on to handle recovery scenarios
