@@ -506,6 +506,12 @@ class BBSBot:
             if disp:
                 disp.close()
 
+    def _ensure_window_is_ready(self):
+        """Helper to re-discover window and set always-on-top property."""
+        self.get_game_region()
+        if self.USE_WMCTRL_ALWAYS_ON_TOP:
+            self.setup_wmctrl_always_on_top()
+
     def setup_wmctrl_always_on_top(self):
         """Set game window to be sticky and always on top using wmctrl"""
         try:
@@ -574,6 +580,8 @@ class BBSBot:
 
         while time.time() - start_time < timeout:
             elapsed_time = time.time() - start_time
+
+            self._ensure_window_is_ready()
 
             try:
                 template_box = pyautogui.locateOnScreen(
@@ -742,6 +750,7 @@ class BBSBot:
         start_time = time.time()
 
         while time.time() - start_time < timeout:
+            self._ensure_window_is_ready()
             try:
                 ready_box = pyautogui.locateOnScreen(
                     self.TEMPLATES["ready"],
@@ -798,6 +807,7 @@ class BBSBot:
         print(f"[POLL] Waiting for {description} to disappear (timeout: {timeout}s)")
         start_time = time.time()
         while time.time() - start_time < timeout:
+            self._ensure_window_is_ready()
             try:
                 # If template is still found, continue waiting
                 if pyautogui.locateOnScreen(
@@ -840,11 +850,7 @@ class BBSBot:
 
         last_processed_state = None  # Track state from previous iteration
         while True:
-            # Periodically re-discover game region and ID to handle window movement
-            # and ensure wmctrl has the latest window ID.
-            self.get_game_region()
-            if self.USE_WMCTRL_ALWAYS_ON_TOP:
-                self.setup_wmctrl_always_on_top()
+            self._ensure_window_is_ready()
             # --- MODIFICATION START ---
             # Check for stuck state at the beginning of each loop iteration
             if (
@@ -1359,6 +1365,7 @@ class BBSBot:
                 auto_found = False
 
                 while time.time() - start_time < self.CHECK_RUN_START_TIMEOUT:
+                    self._ensure_window_is_ready()
                     elapsed = time.time() - start_time
 
                     # Check for ingame auto off (should appear first) - loose threshold to catch it
@@ -1600,6 +1607,7 @@ class BBSBot:
                 start = time.time()
 
                 while time.time() - start < self.QUEST_MAX_TIME:
+                    self._ensure_window_is_ready()
                     elapsed = time.time() - start
 
                     # Check if quest completed (tap1 button available)
@@ -1754,6 +1762,7 @@ class BBSBot:
                         time.time() - start_time < self.TAP1_BUTTON_TIMEOUT
                         and not tap1_clicked
                     ):
+                        self._ensure_window_is_ready()
                         try:
                             tap1_box = pyautogui.locateOnScreen(
                                 self.TEMPLATES["tap1"],
@@ -1804,6 +1813,7 @@ class BBSBot:
                         time.time() - start_time < self.TAP2_BUTTON_TIMEOUT
                         and not tap2_clicked
                     ):
+                        self._ensure_window_is_ready()
                         try:
                             tap2_box = pyautogui.locateOnScreen(
                                 self.TEMPLATES["tap2"],
@@ -1846,6 +1856,7 @@ class BBSBot:
                 if not self.poll_and_click(
                     "retry", timeout=30, description="retry button"
                 ):
+                    self._ensure_window_is_ready() # Ensure window is ready before potentially re-entering state logic
                     self.state = self.try_state_recovery_or_exit("timeout_retry")
                     continue
 
