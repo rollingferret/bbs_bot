@@ -1,0 +1,6 @@
+fix: Robust window management during polling loops
+
+- Introduce `_ensure_window_is_ready()` helper for DRY window management.
+- Integrate `_ensure_window_is_ready()` into all significant polling loops (e.g., `poll_and_click`, `CHECK_RUN_START`, `RUNNING`, `FINISH` tap/retry loops).
+- Ensures continuous re-verification and re-application of 'always on top' status during extended waits.
+- Addresses issue where game window could lose focus or move during long polling cycles, as observed in user logs.

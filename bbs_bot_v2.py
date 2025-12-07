@@ -10,6 +10,10 @@ import pyscreeze
 from Xlib import X, display, protocol
 
 
+class GameWindowNotFoundError(Exception):
+    """Custom exception raised when the game window cannot be found."""
+    pass
+
 class BBSBot:
     def __init__(self):
         # --- CONFIGURATION ---
@@ -102,6 +106,8 @@ class BBSBot:
         self.MAX_STUCK_COUNT = 3  # Max times to be "stuck" in a row before full restart
         self.STUCK_TIMEOUT = 300  # Seconds (5 minutes)
         self.last_state_change_time = time.time()
+        self.WINDOW_NOT_FOUND_RETRIES = 5  # Number of times to retry finding the window before forcing a restart
+        self.current_window_not_found_count = 0
 
     def get_game_region(self):
         try:
@@ -168,7 +174,9 @@ class BBSBot:
                 f"[ERROR] Make sure '{self.GAME_WINDOW_TITLE}' is running and visible"
             )
             print("[ERROR] Ensure it's the actual game, not a browser tab")
-            sys.exit(1)
+            raise GameWindowNotFoundError(
+                f"Game window '{self.GAME_WINDOW_TITLE}' not found or visible"
+            )
 
         sw, sh = pyautogui.size()
         x = max(0, min(geo["X"], sw))
@@ -508,9 +516,29 @@ class BBSBot:
 
     def _ensure_window_is_ready(self):
         """Helper to re-discover window and set always-on-top property."""
-        self.get_game_region()
-        if self.USE_WMCTRL_ALWAYS_ON_TOP:
-            self.setup_wmctrl_always_on_top()
+        try:
+            self.get_game_region()
+            if self.USE_WMCTRL_ALWAYS_ON_TOP:
+                self.setup_wmctrl_always_on_top()
+            # If successful, reset the counter
+            self.current_window_not_found_count = 0
+        except GameWindowNotFoundError as e:
+            self.current_window_not_found_count += 1
+            if self.current_window_not_found_count < self.WINDOW_NOT_FOUND_RETRIES:
+                self.log_run(
+                    "WARNING",
+                    f"Game window not found (attempt "
+                    f"{self.current_window_not_found_count}/"
+                    f"{self.WINDOW_NOT_FOUND_RETRIES}). Will retry."
+                )
+            else:
+                self.log_run(
+                    "ERROR",
+                    f"Game window not found after {self.WINDOW_NOT_FOUND_RETRIES} attempts. "
+                    f"Triggering game restart: {e}"
+                )
+                self.current_window_not_found_count = 0 # Reset for next time
+                self.state = "RESTART_GAME"
 
     def setup_wmctrl_always_on_top(self):
         """Set game window to be sticky and always on top using wmctrl"""
