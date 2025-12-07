@@ -66,6 +66,7 @@ class BBSBot:
         self.AUTO_ICON_MIN_DISTANCE = 60
         self.ROOM_MATCHING_WEIGHT_FACTOR = 0.1
         self.MAX_RULE_DISTANCE = 100
+        self.TAKE_DEBUG_SCREENSHOTS = False # New flag to control debug screenshots
 
         self.TEMPLATES = {
             "game_start": "images/game_start.png",
@@ -189,7 +190,9 @@ class BBSBot:
         sys.exit(1)
 
     def take_debug_screenshot(self, tag):
-        """Captures a screenshot for debugging purposes without exiting."""
+        """Captures a screenshot for debugging purposes without exiting, if the debug flag is enabled."""
+        if not self.TAKE_DEBUG_SCREENSHOTS:
+            return
         suffix = f"_run{self.run_count + 1}_debug"
         path = f"screenshots/{tag}{suffix}_{int(time.time())}.png"
         try:
@@ -825,6 +828,8 @@ class BBSBot:
     def run(self):
         game_start_box = None  # Variable to hold pre-found button
         TEST_RESTART = len(sys.argv) > 1 and sys.argv[1] == "--test-restart"
+        if "--debug-screenshots" in sys.argv:
+            self.TAKE_DEBUG_SCREENSHOTS = True
         if TEST_RESTART:
             self.state, game_start_box = self.restart_game_and_navigate()
         else:
