@@ -316,6 +316,7 @@ class BBSBot:
             ),
             ("auto", "SCAN_ROOMS", "Room list - AUTO icons visible"),
             ("search_again", "SCAN_ROOMS", "Room list - search again visible"),
+            ("room_rules_valid", "SCAN_ROOMS", "Room list - room rules visible"),
             # Lobby screens
             ("ready", "READY", "Room lobby - ready button visible"),
             # In-game screens
@@ -326,6 +327,11 @@ class BBSBot:
             ("tap2", "FINISH", "Quest complete - second tap button"),
             ("retry", "FINISH", "Quest complete - retry button"),
             # Error/popup screens - restart from menu for safety
+            (
+                "closed_room_coop_quest_menu",
+                "MENU",
+                "Room closed/full popup - restarting from menu",
+            ),
             ("close", "MENU", "Error popup detected - restarting from menu"),
             ("retire", "MENU", "Stuck in lobby - restarting from menu"),
             ("okay", "MENU", "Confirmation dialog - restarting from menu"),
