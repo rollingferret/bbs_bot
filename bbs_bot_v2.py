@@ -61,7 +61,7 @@ class BBSBot:
             0.5  # How long to wait after finding an image before clicking it.
         )
         self.INGAME_AUTO_READY_DELAY = 1.5
-        self.FOCUS_RESTORE_DELAY = 0.01
+        self.FOCUS_RESTORE_DELAY = 0.02
         self.TEMPLATE_CONFIDENCE_HIGH = 0.95
         self.TEMPLATE_CONFIDENCE_NORMAL = 0.8
         self.TEMPLATE_CONFIDENCE_LOOSE = 0.7
@@ -108,6 +108,8 @@ class BBSBot:
         self.last_state_change_time = time.time()
         self.WINDOW_NOT_FOUND_RETRIES = 5  # Number of times to retry finding the window before forcing a restart
         self.current_window_not_found_count = 0
+        self.start_time = time.time()
+        self.MAX_KEPT_SCREENSHOTS = 50
 
     def get_game_region(self):
         try:
@@ -208,6 +210,47 @@ class BBSBot:
             print(f"[DEBUG_SCREENSHOT] {tag} → saved {path}")
         except Exception as e:
             print(f"[DEBUG_SCREENSHOT] Failed to save screenshot for {tag}: {e}")
+
+    def cleanup_screenshots(self, max_files=50):
+        """Keep only the N most recent screenshots."""
+        folder = "screenshots"
+        if not os.path.exists(folder):
+            return
+
+        try:
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".png")]
+            if len(files) <= max_files:
+                return
+
+            # Sort by modification time (oldest first)
+            files.sort(key=os.path.getmtime)
+
+            # Delete excess files
+            files_to_delete = files[:-max_files]
+            for f in files_to_delete:
+                try:
+                    os.remove(f)
+                    print(f"[CLEANUP] Removed old screenshot: {f}")
+                except OSError as e:
+                    print(f"[CLEANUP] Error removing {f}: {e}")
+
+            print(f"[CLEANUP] Screenshot maintenance complete. Kept last {max_files} files.")
+        except Exception as e:
+            print(f"[CLEANUP] Failed to clean up screenshots: {e}")
+
+    def handle_exit(self):
+        """Print summary statistics on exit."""
+        duration = time.time() - self.start_time
+        hours, remainder = divmod(duration, 3600)
+        minutes, seconds = divmod(remainder, 60)
+
+        print("\n" + "=" * 40)
+        print(" BOT STOPPED")
+        print("=" * 40)
+        print(f" Total Runs Completed: {self.run_count}")
+        print(f" Total Runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s")
+        print(f" Final State: {self.state}")
+        print("=" * 40)
 
 
 
@@ -878,6 +921,9 @@ class BBSBot:
             self.state, game_start_box = self.restart_game_and_navigate()
         else:
             self.state = "MENU"
+
+        # Initial cleanup on startup
+        self.cleanup_screenshots(self.MAX_KEPT_SCREENSHOTS)
 
         print(f"[WMCTRL_DEBUG] Attempting to set window properties for ID: {self.win_id} with title: '{self.GAME_WINDOW_TITLE}'")
         print("[INFO] Press Ctrl+C to stop the bot")
@@ -1888,7 +1934,7 @@ class BBSBot:
                 # Step 10: retry to loop back
                 self.log_run("STEP", "10 - Clicking retry for next run")
                 if not self.poll_and_click(
-                    "retry", timeout=30, description="retry button"
+                    "retry", timeout=self.RETRY_BUTTON_TIMEOUT, description="retry button"
                 ):
                     self._ensure_window_is_ready() # Ensure window is ready before potentially re-entering state logic
                     self.state = self.try_state_recovery_or_exit("timeout_retry")
@@ -1901,6 +1947,7 @@ class BBSBot:
                     f"✅ [RUN {self.run_count + 1}] Completed run #{self.run_count + 1}"
                 )
                 self.run_count += 1
+                self.cleanup_screenshots(self.MAX_KEPT_SCREENSHOTS) # Maintenance cleanup
                 self.restart_attempts = 0  # Reset restart counter on a successful run
                 print(f"[RUN {self.run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST")
                 time.sleep(self.FINAL_PAUSE_DELAY)
@@ -1912,4 +1959,11 @@ class BBSBot:
 
 if __name__ == "__main__":
     bot = BBSBot()
-    bot.run()
+    try:
+        bot.run()
+    except KeyboardInterrupt:
+        bot.handle_exit()
+    except Exception as e:
+        print(f"[CRASH] Unexpected error: {e}")
+        bot.handle_exit()
+        sys.exit(1)
