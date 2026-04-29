@@ -71,6 +71,7 @@ class BBSBot:
         self.ROOM_MATCHING_WEIGHT_FACTOR = 0.1
         self.MAX_RULE_DISTANCE = 100
         self.TAKE_DEBUG_SCREENSHOTS = False # New flag to control debug screenshots
+        self.MANAGE_INGAME_AUTO = True # Toggle to control if bot manages the in-game auto button
 
         self.TEMPLATES = {
             "game_start": "images/game_start.png",
@@ -1448,37 +1449,7 @@ class BBSBot:
                     self._ensure_window_is_ready()
                     elapsed = time.time() - start_time
 
-                    # Check for ingame auto off (should appear first) - loose threshold to catch it
-                    try:
-                        auto_off_box = pyautogui.locateOnScreen(
-                            self.TEMPLATES["ingame_auto_off"],
-                            region=self.region,
-                            confidence=self.TEMPLATE_CONFIDENCE_LOOSE,
-                        )
-                        if auto_off_box:
-                            print(
-                                f"[RUN {self.run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - waiting for game to be ready..."
-                            )
-                            # Wait for game to fully load OUTSIDE interference window
-                            time.sleep(self.INGAME_AUTO_READY_DELAY)
-                            # Template delay OUTSIDE interference window
-                            time.sleep(self.CLICK_SOAK_DELAY)
-                            random_x, random_y = self._get_random_click_coords(
-                                auto_off_box, self.AUTO_BUTTON_OFFSET_FACTOR
-                            )
-                            # Interference window: only focus restore delay (10ms)
-                            self.simple_click(random_x, random_y, "ingame auto off")
-                            run_started = True
-                            auto_found = True
-                            break
-                    except (
-                        pyscreeze.ImageNotFoundException,
-                        OSError,
-                        pyautogui.ImageNotFoundException,
-                    ):
-                        pass
-
-                    # Also check for auto on (in case it was already enabled) - strict threshold
+                    # 1. Check for auto on first (safest) - strict threshold
                     try:
                         auto_on_box = pyautogui.locateOnScreen(
                             self.TEMPLATES["ingame_auto_on"],
@@ -1489,6 +1460,42 @@ class BBSBot:
                             print(
                                 f"[RUN {self.run_count + 1}] [RUN] Found ingame auto ON after {elapsed:.1f}s - auto already enabled!"
                             )
+                            run_started = True
+                            auto_found = True
+                            break
+                    except (
+                        pyscreeze.ImageNotFoundException,
+                        OSError,
+                        pyautogui.ImageNotFoundException,
+                    ):
+                        pass
+
+                    # 2. Check for ingame auto off - only click if MANAGE_INGAME_AUTO is True
+                    try:
+                        auto_off_box = pyautogui.locateOnScreen(
+                            self.TEMPLATES["ingame_auto_off"],
+                            region=self.region,
+                            confidence=self.TEMPLATE_CONFIDENCE_LOOSE,
+                        )
+                        if auto_off_box:
+                            if self.MANAGE_INGAME_AUTO:
+                                print(
+                                    f"[RUN {self.run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - enabling..."
+                                )
+                                # Wait for game to fully load OUTSIDE interference window
+                                time.sleep(self.INGAME_AUTO_READY_DELAY)
+                                # Template delay OUTSIDE interference window
+                                time.sleep(self.CLICK_SOAK_DELAY)
+                                random_x, random_y = self._get_random_click_coords(
+                                    auto_off_box, self.AUTO_BUTTON_OFFSET_FACTOR
+                                )
+                                # Interference window: only focus restore delay (10ms)
+                                self.simple_click(random_x, random_y, "ingame auto off")
+                            else:
+                                print(
+                                    f"[RUN {self.run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - skipping click (MANAGE_INGAME_AUTO=False)"
+                                )
+                            
                             run_started = True
                             auto_found = True
                             break
