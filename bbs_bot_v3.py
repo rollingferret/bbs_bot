@@ -23,16 +23,16 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 class BotConfiguration:
-    """Centralized configuration for the BBS Bot V3."""
+    """Centralized configuration for the BBS Bot V3.1 'Diamond Polish'."""
     # Window settings
     RAW_TITLE = "Bleach: Brave Souls"
     GAME_WINDOW_TITLE = RAW_TITLE
     
-    # Gaussian delay defaults (mu, sigma_factor)
-    DELAY_COGNITIVE_LOAD = (1.5, 0.3)
-    DELAY_SCREEN_TRANSITION = (2.0, 0.3)
-    DELAY_POPUP_DISMISS = (3.0, 0.4)
-    DELAY_TAP_PAUSE = (5.0, 0.5)
+    # 'Bankai' Speed Profile (V2 Parity)
+    DELAY_COGNITIVE_LOAD = (0.1, 0.05)
+    DELAY_SCREEN_TRANSITION = (0.5, 0.1)
+    DELAY_POPUP_DISMISS = (1.5, 0.3)
+    DELAY_TAP_PAUSE = (3.0, 0.4) # Mean 3s for tap transitions
     
     # State-specific timeouts
     TIMEOUT_STUCK = 300  
@@ -46,20 +46,19 @@ class BotConfiguration:
     TIMEOUT_TAP_VERIFY = 15
     
     # Wait Delays (Means)
-    WAIT_ROOM_LOAD = 1.0
-    WAIT_SEARCH_AGAIN = 2.0
-    WAIT_RETRY_PAUSE = 3.0
+    WAIT_ROOM_LOAD = 0.1
+    WAIT_SEARCH_AGAIN = 0.5
     WAIT_RETIRE_STEP = 1.0
     WAIT_DISCONNECT_RECOVERY = 2.0
-    WAIT_INGAME_AUTO_READY = 1.5
+    WAIT_INGAME_AUTO_READY = 1.0
     
-    # Fatigue settings
-    FATIGUE_INCREASE_RATE = 0.005  # 0.5% increase in mu per run
-    MAX_FATIGUE_MODIFIER = 1.5      # Max 50% slower
+    # Behavioral Settings
+    FATIGUE_INCREASE_RATE = 0.0  # Constant speed for event grinding
+    MAX_FATIGUE_MODIFIER = 1.0
     
     # Distraction settings
     DISTRACTION_CHANCE = (15, 25) # Every 15-25 runs
-    DISTRACTION_DURATION = (120, 480) # 2-8 minutes in seconds
+    DISTRACTION_DURATION = (120, 480) # 2-8 minutes
     
     # Session limits
     SESSION_MAX_HOURS = 12
@@ -90,9 +89,6 @@ class BotConfiguration:
     
     # Technical toggles
     USE_WMCTRL_ALWAYS_ON_TOP = True
-    USE_X11_DIRECT_CLICKS = True
-    MANAGE_INGAME_AUTO = True
-    TAKE_DEBUG_SCREENSHOTS = False
     TEMPLATE_CONFIDENCE_NORMAL = 0.8
     TEMPLATE_CONFIDENCE_HIGH = 0.95
     TEMPLATE_CONFIDENCE_LOOSE = 0.7
@@ -101,8 +97,7 @@ def human_delay(mu, sigma_factor=0.3):
     """Gaussian-randomized sleep duration."""
     sigma = mu * sigma_factor
     delay = random.gauss(mu, sigma)
-    # Clamp delay to be at least a reasonable minimum
-    delay = max(delay, mu * 0.5)
+    delay = max(delay, mu * 0.1) # Absolute floor
     time.sleep(delay)
 
 class GameWindowNotFoundError(Exception):
@@ -111,7 +106,7 @@ class GameWindowNotFoundError(Exception):
 class BBSBot:
     def __init__(self, config=BotConfiguration()):
         self.config = config
-        self.state = "RECOVERY" # Start in RECOVERY to sync anywhere
+        self.state = "RECOVERY" 
         self.prev_state = None
         self.run_count = 0
         self.start_time = time.time()
@@ -125,44 +120,42 @@ class BBSBot:
         os.makedirs("screenshots", exist_ok=True)
         pyautogui.FAILSAFE = False
         
-        logger.info("BBS Bot V3 Initialized.")
+        logger.info("BBS Bot V3.1 'Wide-Jitter' Initialized.")
+
+    # --- VISION WRAPPERS (Integrity Fix) ---
+
+    def find_image(self, template_key, confidence=None, region=None):
+        """Safe wrapper to catch ImageNotFoundException."""
+        conf = confidence or self.config.TEMPLATE_CONFIDENCE_NORMAL
+        reg = region or self.region
+        try:
+            return pyautogui.locateOnScreen(self.config.TEMPLATES[template_key], region=reg, confidence=conf)
+        except (pyscreeze.ImageNotFoundException, pyautogui.ImageNotFoundException):
+            return None
+        except Exception as e:
+            logger.error(f"Vision error ({template_key}): {e}")
+            return None
+
+    def find_all_images(self, template_key, confidence=None, region=None):
+        """Safe wrapper for locateAllOnScreen."""
+        conf = confidence or self.config.TEMPLATE_CONFIDENCE_NORMAL
+        reg = region or self.region
+        try:
+            return list(pyautogui.locateAllOnScreen(self.config.TEMPLATES[template_key], region=reg, confidence=conf))
+        except (pyscreeze.ImageNotFoundException, pyautogui.ImageNotFoundException):
+            return []
+        except Exception as e:
+            logger.error(f"Vision error (all {template_key}): {e}")
+            return []
 
     # --- BEHAVIORAL UTILITIES ---
 
     def fatigue_delay(self, mu, sigma_factor=0.3):
-        """Gaussian delay with fatigue modifier applied to mu."""
         human_delay(mu * self.fatigue_modifier, sigma_factor)
 
     def apply_cognitive_load(self):
-        """Simulate human reaction time before an action."""
         mu, sigma_factor = self.config.DELAY_COGNITIVE_LOAD
         self.fatigue_delay(mu, sigma_factor)
-
-    def update_fatigue(self):
-        """Increase fatigue modifier over time."""
-        self.fatigue_modifier = min(
-            self.config.MAX_FATIGUE_MODIFIER,
-            1.0 + (self.run_count * self.config.FATIGUE_INCREASE_RATE)
-        )
-
-    def check_session_limit(self):
-        """Terminate if active time exceeds limit."""
-        elapsed_hours = (time.time() - self.start_time) / 3600
-        if elapsed_hours >= self.config.SESSION_MAX_HOURS:
-            logger.warning(f"Session limit reached ({self.config.SESSION_MAX_HOURS}h). Terminating.")
-            subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], check=False)
-            sys.exit(0)
-
-    def take_debug_screenshot(self, tag):
-        """Captures a screenshot for debugging purposes if enabled."""
-        if not self.config.TAKE_DEBUG_SCREENSHOTS:
-            return
-        path = f"screenshots/{tag}_run{self.run_count}_{int(time.time())}.png"
-        try:
-            pyautogui.screenshot(region=self.region).save(path)
-            logger.debug(f"Debug screenshot saved: {path}")
-        except Exception as e:
-            logger.error(f"Failed to save debug screenshot: {e}")
 
     def deduplicate_auto_icons(self, matches):
         """Remove overlapping AUTO icon detections."""
@@ -175,7 +168,7 @@ class BBSBot:
         return unique
 
     def match_autos_with_rules(self, autos, rules):
-        """Match AUTO icons with Room Rules by proximity (weighted)."""
+        """Match AUTO icons with Room Rules by proximity."""
         valid_rooms = []
         for auto in autos:
             ax, ay = auto.left + auto.width // 2, auto.top + auto.height // 2
@@ -199,15 +192,13 @@ class BBSBot:
             self.state = new_state
             self.last_state_change_time = time.time()
 
-    # --- WINDOW MANAGEMENT ---
+    # --- X11 & WINDOW MANAGEMENT ---
 
     def ensure_window_ready(self):
-        """Helper to re-discover window and set always-on-top property."""
         try:
             self.get_game_region()
             self.setup_window_properties()
         except GameWindowNotFoundError:
-            logger.warning("Window lost, attempting recovery...")
             if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK:
                 self.recover_game()
 
@@ -244,8 +235,7 @@ class BBSBot:
         if self.config.USE_WMCTRL_ALWAYS_ON_TOP:
             try:
                 subprocess.run(["wmctrl", "-r", self.config.GAME_WINDOW_TITLE, "-b", "add,sticky,above"], check=True)
-            except Exception as e:
-                logger.warning(f"WMCTRL failed: {e}")
+            except Exception: pass
 
     def send_x11_click(self, x, y):
         disp = None
@@ -272,22 +262,28 @@ class BBSBot:
         finally:
             if disp: disp.close()
 
-    def smart_click(self, box, description="element"):
-        """Gaussian-weighted click centered on the box midpoint."""
+    def smart_click(self, box, description="element", is_overlay=False):
+        """Gaussian-weighted click with Sloppy/Precise logic."""
         self.apply_cognitive_load()
         
-        # Center-weighted Gaussian coordinates
         mu_x = box.left + box.width / 2
         mu_y = box.top + box.height / 2
-        sigma_x = box.width / 6
-        sigma_y = box.height / 6
+        
+        if is_overlay:
+            # Sloppy Overlay Jitter (200px spread)
+            sigma_x = sigma_y = 100
+        else:
+            # Sloppy Button Jitter (sigma = width/4, ~70% coverage)
+            sigma_x = box.width / 4
+            sigma_y = box.height / 4
         
         click_x = int(random.gauss(mu_x, sigma_x))
         click_y = int(random.gauss(mu_y, sigma_y))
         
-        # Clamp to box bounds
-        click_x = max(box.left, min(click_x, box.left + box.width - 1))
-        click_y = max(box.top, min(click_y, box.top + box.height - 1))
+        # Clamp only for buttons; overlays can be anywhere on screen
+        if not is_overlay:
+            click_x = max(box.left, min(click_x, box.left + box.width - 1))
+            click_y = max(box.top, min(click_y, box.top + box.height - 1))
 
         current_window = None
         try:
@@ -313,17 +309,13 @@ class BBSBot:
             subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], check=False)
         except: pass
         time.sleep(5)
-        
         subprocess.Popen(["steam", "-applaunch", "1201240"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
-        # Wait for start screen (120s)
         start_wait = time.time()
         while time.time() - start_wait < 120:
-            try:
-                if pyautogui.locateOnScreen(self.config.TEMPLATES["game_start"], confidence=0.8):
-                    logger.info("Game started successfully.")
-                    break
-            except: pass
+            if self.find_image("game_start"):
+                logger.info("Game started successfully.")
+                break
             time.sleep(5)
         
         self.get_game_region()
@@ -341,302 +333,176 @@ class BBSBot:
 
     def handle_menu(self):
         """Main menu navigation (MENU)."""
-        self.take_debug_screenshot("menu")
-        start_time = time.time()
-        
-        # Expand banner until specific quest is visible (20s loop)
-        while time.time() - start_time < self.config.TIMEOUT_LOBBY_EXPAND:
-            try:
-                if pyautogui.locateOnScreen(self.config.TEMPLATES["open_coop_quest"], region=self.region, confidence=0.8):
-                    logger.info("Specific quest is visible. Clicking.")
-                    qbox = pyautogui.locateOnScreen(self.config.TEMPLATES["open_coop_quest"], region=self.region, confidence=0.8)
-                    if qbox:
-                        self.smart_click(qbox, "specific quest")
-                        # Confirm arrival at room list
-                        start_verify = time.time()
-                        while time.time() - start_verify < 15:
-                            if pyautogui.locateOnScreen(self.config.TEMPLATES["enter_room_button"], region=self.region, confidence=0.8):
-                                self.transition_to("ENTER_ROOM_LIST")
-                                return
-                            time.sleep(0.5)
-                        logger.warning("Failed to find enter_room_button after quest click.")
-            except: pass
+        # 1. Check if specific quest is already visible
+        qbox = self.find_image("open_coop_quest")
+        if qbox:
+            self.smart_click(qbox, "specific quest")
+            self.transition_to("ENTER_ROOM_LIST")
+            return
 
-            # Otherwise click the banner to expand
-            try:
-                box = pyautogui.locateOnScreen(self.config.TEMPLATES["coop_quest"], region=self.region, confidence=0.8)
-                if box:
-                    self.smart_click(box, "coop menu banner")
-                    self.fatigue_delay(1.5)
-            except: pass
-            time.sleep(0.5)
-        
-        self.transition_to("RECOVERY")
+        # 2. Otherwise click banner to expand
+        box = self.find_image("coop_quest")
+        if box:
+            self.smart_click(box, "coop menu banner")
+            self.fatigue_delay(0.5) # Fast polling for animation
+
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_EXPAND:
+            self.transition_to("RECOVERY")
 
     def handle_enter_room_list(self):
         """Enter room list (ENTER_ROOM_LIST)."""
-        self.take_debug_screenshot("enter_room_list")
-        try:
-            ebit = pyautogui.locateOnScreen(self.config.TEMPLATES["enter_room_button"], region=self.region, confidence=0.8)
-            if ebit:
-                self.smart_click(ebit, "enter room list")
-                
-                # Poll for AUTO icons
-                start_poll = time.time()
-                while time.time() - start_poll < 5: 
-                    if list(pyautogui.locateAllOnScreen(self.config.TEMPLATES["auto"], region=self.region, confidence=0.8)):
-                        logger.info("Room list loaded.")
-                        break
-                    time.sleep(0.5)
-                
-                self.fatigue_delay(self.config.WAIT_ROOM_LOAD)
-                self.transition_to("SCAN_ROOMS")
-                return
-        except: pass
-        self.transition_to("RECOVERY")
+        ebit = self.find_image("enter_room_button")
+        if ebit:
+            self.smart_click(ebit, "enter room list")
+            self.fatigue_delay(0.5)
+            self.transition_to("SCAN_ROOMS")
+            return
+        
+        # If already at SCAN_ROOMS
+        if self.find_image("search_again"):
+            self.transition_to("SCAN_ROOMS")
+            return
+
+        if time.time() - self.last_state_change_time > 10:
+            self.transition_to("RECOVERY")
 
     def handle_scan_rooms(self):
         """Scan and join rooms (SCAN_ROOMS)."""
-        self.take_debug_screenshot("scan_rooms")
-        try:
-            if pyautogui.locateOnScreen(self.config.TEMPLATES["enter_room_button"], region=self.region, confidence=0.8):
-                self.transition_to("ENTER_ROOM_LIST")
+        # V2 Performance: First Match, Immediate Click
+        autos = self.find_all_images("auto")
+        if autos:
+            rules = self.find_all_images("room_rules_valid", confidence=0.7)
+            valid_rooms = self.match_autos_with_rules(self.deduplicate_auto_icons(autos), rules)
+            
+            if valid_rooms:
+                auto, rule = valid_rooms[0]
+                logger.info("Joining room instantly.")
+                px = int((auto.left + rule.left + rule.width) // 2)
+                py = int(auto.top + auto.height // 2)
+                self.smart_click(pyscreeze.Box(px-5, py-5, 10, 10), "join room")
+                self.transition_to("READY")
                 return
 
-            autos = self.deduplicate_auto_icons(list(pyautogui.locateAllOnScreen(self.config.TEMPLATES["auto"], region=self.region, confidence=0.8)))
-            rules = list(pyautogui.locateAllOnScreen(self.config.TEMPLATES["room_rules_valid"], region=self.region, confidence=0.7))
-            
-            valid_rooms = self.match_autos_with_rules(autos, rules)
-            
-            if not valid_rooms:
-                sabox = pyautogui.locateOnScreen(self.config.TEMPLATES["search_again"], region=self.region, confidence=0.8)
-                if sabox:
-                    self.smart_click(sabox, "search again")
-                    self.fatigue_delay(self.config.WAIT_SEARCH_AGAIN)
-                    return
-                else:
-                    self.transition_to("RECOVERY")
-                    return
+        sabox = self.find_image("search_again")
+        if sabox:
+            self.smart_click(sabox, "search again")
+            self.fatigue_delay(0.5)
+            return
 
-            auto, rule = valid_rooms[0]
-            logger.info(f"Joining valid room (1 of {len(valid_rooms)}).")
-            px = int((auto.left + rule.left + rule.width) // 2)
-            py = int(auto.top + auto.height // 2)
-            click_box = pyscreeze.Box(px-5, py-5, 10, 10)
-            
-            if self.smart_click(click_box, "join room"):
-                # Join Verification Loop
-                start_verify = time.time()
-                while time.time() - start_verify < self.config.TIMEOUT_JOIN_VERIFY:
-                    if pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8):
-                        self.transition_to("READY")
-                        return
-                    
-                    # Room Full Popup
-                    full_box = pyautogui.locateOnScreen(self.config.TEMPLATES["closed_room_coop_quest_menu"], region=self.region, confidence=0.8)
-                    if full_box:
-                        logger.info("Room full. Returning to MENU.")
-                        self.smart_click(full_box, "close full popup")
-                        self.fatigue_delay(self.config.DELAY_POPUP_DISMISS[0])
-                        self.transition_to("MENU")
-                        return
-                    
-                    # Room Unavailable Popup
-                    close_box = pyautogui.locateOnScreen(self.config.TEMPLATES["close"], region=self.region, confidence=0.8)
-                    if close_box:
-                        logger.info("Room unavailable. Re-scanning.")
-                        self.smart_click(close_box, "close unavailable")
-                        self.fatigue_delay(self.config.DELAY_POPUP_DISMISS[0])
-                        return
-                    time.sleep(0.5)
-                
-                logger.warning("Join click had no effect. Re-scanning.")
-        except Exception as e:
-            logger.error(f"Error in SCAN_ROOMS: {e}")
+        if time.time() - self.last_state_change_time > 15:
             self.transition_to("RECOVERY")
 
     def handle_ready(self):
         """Wait for ready and start (READY)."""
-        self.take_debug_screenshot("ready")
-        try:
-            pbox = pyautogui.locateOnScreen(self.config.TEMPLATES["closed_room_coop_quest_menu"], region=self.region, confidence=0.8)
-            if pbox:
-                logger.info("Room full popup in lobby. Returning to MENU.")
-                self.smart_click(pbox, "close full popup")
-                self.transition_to("MENU")
+        full_box = self.find_image("closed_room_coop_quest_menu")
+        if full_box:
+            self.smart_click(full_box, "close full popup")
+            self.transition_to("MENU")
+            return
+
+        rbox = self.find_image("ready")
+        if rbox:
+            if self.smart_click(rbox, "ready button"):
+                self.transition_to("CHECK_RUN_START")
                 return
 
-            rbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8)
-            if rbox:
-                logger.info("Ready button found. Waiting 1s.")
-                time.sleep(1.0)
-                if self.smart_click(rbox, "ready button"):
-                    # Confirm disappearance
-                    start_verify = time.time()
-                    while time.time() - start_verify < 5:
-                        if not pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8):
-                            logger.info("Ready button clicked successfully.")
-                            self.transition_to("CHECK_RUN_START")
-                            return
-                        time.sleep(0.5)
-                    logger.warning("Ready button still visible after click.")
-        except Exception as e:
-            logger.error(f"Error in READY: {e}")
-        
-        # Stuck timeout
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_READY:
             self.transition_to("RECOVERY")
 
     def handle_check_run_start(self):
         """Poll for battle start (CHECK_RUN_START)."""
-        self.take_debug_screenshot("check_run_start")
-        start_time = self.last_state_change_time
-        elapsed = time.time() - start_time
-        
-        if elapsed > self.config.TIMEOUT_RUN_START:
-            logger.error("Run start timeout (300s). Attempting to retire.")
-            try:
-                retire_box = pyautogui.locateOnScreen(self.config.TEMPLATES["retire"], region=self.region, confidence=0.8)
-                if retire_box:
-                    self.smart_click(retire_box, "retire button")
-                    self.fatigue_delay(self.config.WAIT_RETIRE_STEP)
-                    
-                    okay_box = pyautogui.locateOnScreen(self.config.TEMPLATES["okay"], region=self.region, confidence=0.8)
-                    if okay_box: 
-                        self.smart_click(okay_box, "confirm retire okay")
-                        self.fatigue_delay(self.config.WAIT_RETIRE_STEP)
-                        
-                        final_box = pyautogui.locateOnScreen(self.config.TEMPLATES["closed_room_coop_quest_menu"], region=self.region, confidence=0.8)
-                        if final_box:
-                            self.smart_click(final_box, "final retire confirm")
-                            self.fatigue_delay(self.config.WAIT_RETIRE_STEP)
-            except: pass
+        # Success Indicators
+        if self.find_image("ingame_auto_on", confidence=0.95) or self.find_image("ingame_auto_off", confidence=0.7):
+            logger.info("Run started.")
+            self.transition_to("RUNNING")
+            return
+
+        # Sad Paths
+        full_box = self.find_image("closed_room_coop_quest_menu")
+        if full_box:
+            self.smart_click(full_box, "close closure popup")
             self.transition_to("MENU")
             return
 
-        try:
-            if pyautogui.locateOnScreen(self.config.TEMPLATES["ingame_auto_on"], region=self.region, confidence=0.95):
-                logger.info(f"Run started after {elapsed:.1f}s (auto on).")
-                self.transition_to("RUNNING")
-                return
-            
-            offbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ingame_auto_off"], region=self.region, confidence=0.7)
-            if offbox:
-                if self.config.MANAGE_INGAME_AUTO:
-                    logger.info(f"Run started after {elapsed:.1f}s (auto off). Enabling.")
-                    time.sleep(self.config.WAIT_INGAME_AUTO_READY)
-                    self.smart_click(offbox, "enable auto")
-                else:
-                    logger.info(f"Run started after {elapsed:.1f}s (auto off).")
-                self.transition_to("RUNNING")
-                return
+        close_box = self.find_image("close")
+        if close_box:
+            self.smart_click(close_box, "close disconnect")
+            self.transition_to("MENU")
+            return
 
-            full_box = pyautogui.locateOnScreen(self.config.TEMPLATES["closed_room_coop_quest_menu"], region=self.region, confidence=0.8)
-            if full_box:
-                logger.warning("Room closed by owner.")
-                self.smart_click(full_box, "close closure popup")
-                self.fatigue_delay(1.0)
-                self.transition_to("MENU")
-                return
-
-            close_box = pyautogui.locateOnScreen(self.config.TEMPLATES["close"], region=self.region, confidence=0.8)
-            if close_box:
-                logger.warning("Disconnect popup detected.")
-                self.smart_click(close_box, "close disconnect")
-                self.fatigue_delay(self.config.WAIT_DISCONNECT_RECOVERY)
-                self.transition_to("MENU")
-                return
-        except Exception as e:
-            logger.error(f"Error in CHECK_RUN_START: {e}")
-        
-        time.sleep(2.0)
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START:
+            logger.error("Run start timeout. Retiring.")
+            retire_box = self.find_image("retire")
+            if retire_box:
+                self.smart_click(retire_box, "retire button")
+                time.sleep(1)
+                okay_box = self.find_image("okay")
+                if okay_box: self.smart_click(okay_box, "confirm retire")
+            self.transition_to("MENU")
 
     def handle_running(self):
         """Monitor battle progress (RUNNING)."""
         if self.config.MANAGE_INGAME_AUTO:
-            try:
-                offbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ingame_auto_off"], region=self.region, confidence=0.7)
-                if offbox:
-                    logger.info("Auto is OFF during battle. Re-enabling.")
-                    self.smart_click(offbox, "enable auto")
-            except: pass
+            offbox = self.find_image("ingame_auto_off", confidence=0.7)
+            if offbox:
+                self.smart_click(offbox, "enable auto")
 
-        try:
-            tbox = pyautogui.locateOnScreen(self.config.TEMPLATES["tap1"], region=self.region, confidence=0.8)
-            if tbox:
-                logger.info("Quest completed.")
-                self.transition_to("FINISH")
-                return
-            
-            cbox = pyautogui.locateOnScreen(self.config.TEMPLATES["close"], region=self.region, confidence=0.8)
-            if cbox:
-                logger.warning("Disconnect during battle. Resuming.")
-                self.smart_click(cbox, "close disconnect")
-        except: pass
+        tbox = self.find_image("tap1")
+        if tbox:
+            logger.info("Quest completed.")
+            self.transition_to("FINISH")
+            return
+        
+        cbox = self.find_image("close")
+        if cbox:
+            self.smart_click(cbox, "close disconnect")
 
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX:
-            logger.error("Quest max time reached.")
             self.transition_to("RECOVERY")
-        
-        time.sleep(5.0)
 
     def handle_finish(self):
         """Tap through rewards to retry (FINISH)."""
-        self.take_debug_screenshot("finish")
-        try:
-            rt = pyautogui.locateOnScreen(self.config.TEMPLATES["retry"], region=self.region, confidence=0.8)
-            if rt:
-                self.smart_click(rt, "retry quest")
-                self.run_count += 1
-                self.update_fatigue()
-                logger.info(f"Run {self.run_count} completed. Fatigue: {self.fatigue_modifier:.2f}")
-                
-                if self.run_count >= self.next_distraction_run:
-                    self.transition_to("DISTRACTION")
-                else:
-                    self.transition_to("ENTER_ROOM_LIST")
-                return
+        rt = self.find_image("retry")
+        if rt:
+            self.smart_click(rt, "retry quest")
+            self.run_count += 1
+            logger.info(f"Run {self.run_count} completed.")
+            if self.run_count >= self.next_distraction_run:
+                self.transition_to("DISTRACTION")
+            else:
+                self.transition_to("ENTER_ROOM_LIST")
+            return
 
-            t2 = pyautogui.locateOnScreen(self.config.TEMPLATES["tap2"], region=self.region, confidence=0.8)
-            if t2:
-                self.smart_click(t2, "reward tap 2")
-                self.fatigue_delay(self.config.DELAY_SCREEN_TRANSITION[0])
-                return
+        t2 = self.find_image("tap2")
+        if t2:
+            self.smart_click(t2, "reward tap 2", is_overlay=True)
+            return
 
-            t1 = pyautogui.locateOnScreen(self.config.TEMPLATES["tap1"], region=self.region, confidence=0.8)
-            if t1:
-                self.smart_click(t1, "reward tap 1")
-                self.fatigue_delay(self.config.DELAY_TAP_PAUSE[0])
-                return
-        except Exception as e:
-            logger.error(f"Error in FINISH: {e}")
+        t1 = self.find_image("tap1")
+        if t1:
+            self.smart_click(t1, "reward tap 1", is_overlay=True)
+            return
 
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
             self.transition_to("RECOVERY")
-        time.sleep(1)
 
     def handle_game_startup(self):
         """Navigate from splash screens (GAME_STARTUP)."""
-        try:
-            for key in ["game_start", "close_news", "coop_1", "coop_2"]:
-                box = pyautogui.locateOnScreen(self.config.TEMPLATES[key], region=self.region, confidence=0.8)
-                if box:
-                    self.smart_click(box, f"startup {key}")
-                    self.fatigue_delay(2.0)
-            
-            if pyautogui.locateOnScreen(self.config.TEMPLATES["coop_quest"], region=self.region, confidence=0.8):
-                self.transition_to("MENU")
-        except: pass
+        for key in ["game_start", "close_news", "coop_1", "coop_2"]:
+            box = self.find_image(key)
+            if box:
+                self.smart_click(box, f"startup {key}")
+        
+        if self.find_image("coop_quest"):
+            self.transition_to("MENU")
 
     def handle_recovery(self):
         """Identify state or restart (RECOVERY)."""
-        try:
-            cbox = pyautogui.locateOnScreen(self.config.TEMPLATES["close"], region=self.region, confidence=0.8)
-            if cbox:
-                self.smart_click(cbox, "error popup close")
-                self.transition_to("MENU")
-                return
-        except: pass
+        cbox = self.find_image("close")
+        if cbox:
+            self.smart_click(cbox, "error popup close")
+            self.transition_to("MENU")
+            return
         
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK:
             self.recover_game()
@@ -650,34 +516,26 @@ class BBSBot:
                 ("FINISH", "retry"),
                 ("READY", "ready"),
                 ("SCAN_ROOMS", "search_again"),
-                ("SCAN_ROOMS", "room_rules_valid"),
                 ("ENTER_ROOM_LIST", "enter_room_button"),
                 ("MENU", "open_coop_quest"),
                 ("MENU", "coop_quest"),
                 ("GAME_STARTUP", "game_start")
             ]
             for state, template in recovery_templates:
-                try:
-                    if pyautogui.locateOnScreen(self.config.TEMPLATES[template], region=self.region, confidence=0.8):
-                        self.transition_to(state)
-                        return
-                except: pass
-            time.sleep(5)
+                if self.find_image(template):
+                    self.transition_to(state)
+                    return
+            time.sleep(2)
 
     def run(self):
         test_restart = "--test-restart" in sys.argv
         if "--debug-screenshots" in sys.argv:
             self.config.TAKE_DEBUG_SCREENSHOTS = True
-            logger.info("Debug screenshots enabled.")
 
         try:
-            if test_restart:
-                self.recover_game()
-            else:
-                self.get_game_region()
-                self.setup_window_properties()
-        except GameWindowNotFoundError:
-            self.recover_game()
+            if test_restart: self.recover_game()
+            else: self.get_game_region(); self.setup_window_properties()
+        except GameWindowNotFoundError: self.recover_game()
 
         logger.info(f"Starting bot in state: {self.state}")
         while True:
@@ -695,7 +553,7 @@ class BBSBot:
             elif self.state == "RECOVERY": self.handle_recovery()
             elif self.state == "GAME_STARTUP": self.handle_game_startup()
             
-            time.sleep(0.5)
+            time.sleep(0.1)
 
 if __name__ == "__main__":
     bot = BBSBot()
