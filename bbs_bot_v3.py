@@ -460,8 +460,11 @@ class BBSBot:
             
             offbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ingame_auto_off"], region=self.region, confidence=0.7)
             if offbox:
-                logger.info("Run started (auto off). Enabling.")
-                self.smart_click(offbox, "enable auto")
+                if self.config.MANAGE_INGAME_AUTO:
+                    logger.info("Run started (auto off). Enabling.")
+                    self.smart_click(offbox, "enable auto")
+                else:
+                    logger.info("Run started (auto off). Skipping click (MANAGE_INGAME_AUTO=False)")
                 self.transition_to("IN_BATTLE")
                 return
 
@@ -478,6 +481,15 @@ class BBSBot:
 
     def handle_in_battle(self):
         """Monitor battle progress."""
+        # Check for auto button if management enabled
+        if self.config.MANAGE_INGAME_AUTO:
+            try:
+                offbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ingame_auto_off"], region=self.region, confidence=0.7)
+                if offbox:
+                    logger.info("Auto is OFF during battle. Re-enabling.")
+                    self.smart_click(offbox, "enable auto")
+            except: pass
+
         # Check for completion
         try:
             tbox = pyautogui.locateOnScreen(self.config.TEMPLATES["tap1"], region=self.region, confidence=0.8)
@@ -571,6 +583,7 @@ class BBSBot:
                 ("COOP_LOBBY", "ready"), 
                 ("WAIT_FOR_START", "retire"), # Retire is visible in lobby/loading
                 ("IN_BATTLE", "ingame_auto_on"),
+                ("IN_BATTLE", "ingame_auto_off"),
                 ("GAME_STARTUP", "game_start"),
                 ("REWARDS", "tap1"),
                 ("REWARDS", "tap2"),
