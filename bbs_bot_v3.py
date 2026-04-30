@@ -102,7 +102,7 @@ class GameWindowNotFoundError(Exception):
 class BBSBot:
     def __init__(self, config=BotConfiguration()):
         self.config = config
-        self.state = "LOBBY" # Starting state (LOBBY maps to MENU in V2 logic)
+        self.state = "RECOVERY" # Start in RECOVERY to instantly identify current screen
         self.prev_state = None
         self.run_count = 0
         self.start_time = time.time()
