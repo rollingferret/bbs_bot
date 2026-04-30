@@ -122,7 +122,17 @@ class BBSBot:
         
         logger.info("BBS Bot V3.1 'Wide-Jitter' Initialized.")
 
-    # --- VISION WRAPPERS (Integrity Fix) ---
+    def check_session_limit(self):
+        """Ensures the bot doesn't exceed the safety window."""
+        elapsed_hours = (time.time() - self.start_time) / 3600
+        if elapsed_hours >= self.config.SESSION_MAX_HOURS:
+            logger.warning(f"SESSION LIMIT: {self.config.SESSION_MAX_HOURS}h reached. Shutting down.")
+            try:
+                subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], check=False)
+            except: pass
+            sys.exit(0)
+
+    # --- VISION WRAPPERS ---
 
     def find_image(self, template_key, confidence=None, region=None):
         """Safe wrapper to catch ImageNotFoundException."""
