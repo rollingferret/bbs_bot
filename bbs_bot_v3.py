@@ -5,6 +5,7 @@ import subprocess
 import random
 import re
 import logging
+import math
 from datetime import datetime
 
 import pyautogui
@@ -27,11 +28,11 @@ class BotConfiguration:
     RAW_TITLE = "Bleach: Brave Souls"
     GAME_WINDOW_TITLE = RAW_TITLE
     
-    # 'Bankai' Speed Profile
+    # 'Bankai' Speed Profile (V2 Performance)
     DELAY_COGNITIVE_LOAD = (0.1, 0.05)
     DELAY_SCREEN_TRANSITION = (0.5, 0.1)
     DELAY_POPUP_DISMISS = (1.5, 0.3)
-    DELAY_TAP_PAUSE = (3.0, 0.4)
+    DELAY_TAP_PAUSE = (5.0, 0.5) # Standard reward transition
     
     # Timeouts
     TIMEOUT_STUCK = 300  
@@ -52,12 +53,20 @@ class BotConfiguration:
     WAIT_INGAME_AUTO_READY = 1.0
     
     # Behavioral
-    FATIGUE_INCREASE_RATE = 0.0
+    FATIGUE_INCREASE_RATE = 0.0 # Disabled for event grinding
     MAX_FATIGUE_MODIFIER = 1.0
     DISTRACTION_CHANCE = (15, 25)
     DISTRACTION_DURATION = (120, 480)
     SESSION_MAX_HOURS = 12
     
+    # Technical
+    TAKE_DEBUG_SCREENSHOTS = False
+    MANAGE_INGAME_AUTO = True
+    USE_WMCTRL_ALWAYS_ON_TOP = True
+    TEMPLATE_CONFIDENCE_NORMAL = 0.8
+    TEMPLATE_CONFIDENCE_HIGH = 0.95
+    TEMPLATE_CONFIDENCE_LOOSE = 0.7
+
     TEMPLATES = {
         "game_start": "images/game_start.png",
         "close_news": "images/close_news.png",
@@ -80,11 +89,6 @@ class BotConfiguration:
         "tap2": "images/tap2.png",
         "retry": "images/retry.png",
     }
-    
-    USE_WMCTRL_ALWAYS_ON_TOP = True
-    TEMPLATE_CONFIDENCE_NORMAL = 0.8
-    TEMPLATE_CONFIDENCE_HIGH = 0.95
-    TEMPLATE_CONFIDENCE_LOOSE = 0.7
 
 def human_delay(mu, sigma_factor=0.3):
     sigma = mu * sigma_factor
@@ -109,10 +113,16 @@ class BBSBot:
         self.fatigue_modifier = 1.0
         os.makedirs("screenshots", exist_ok=True)
         pyautogui.FAILSAFE = False
-        logger.info("BBS Bot V3.1 'Forensic Audit' Initialized.")
+        logger.info("BBS Bot V3.1 'Mechanical Integrity' Initialized.")
+
+    def update_fatigue(self):
+        """Sinusoidal Fatigue (Attention Waves) - Part of Diamond Polish."""
+        # 30-minute cycle (1800 seconds)
+        # Modifier fluctuates between 0.95 and 1.15
+        elapsed = time.time() - self.start_time
+        self.fatigue_modifier = 1.05 + 0.1 * math.sin(elapsed * (2 * math.pi / 1800))
 
     def check_session_limit(self):
-        """Mechanical verification: Defined and called in run()."""
         elapsed_hours = (time.time() - self.start_time) / 3600
         if elapsed_hours >= self.config.SESSION_MAX_HOURS:
             logger.warning(f"SESSION LIMIT: {self.config.SESSION_MAX_HOURS}h reached.")
@@ -292,7 +302,7 @@ class BBSBot:
 
     def handle_distraction(self):
         duration = random.randint(*self.config.DISTRACTION_DURATION)
-        logger.info(f"DISTRACTION: Coffee break for {duration}s...")
+        logger.info(f"DISTRACTION: Taking a break for {duration}s...")
         time.sleep(duration)
         self.next_distraction_run = self.run_count + random.randint(*self.config.DISTRACTION_CHANCE)
         self.transition_to("RECOVERY")
@@ -336,6 +346,7 @@ class BBSBot:
             valid_rooms = self.match_autos_with_rules(self.deduplicate_auto_icons(autos), rules)
             if valid_rooms:
                 auto, rule = valid_rooms[0]
+                logger.info("Joining room instantly.")
                 px = int((auto.left + rule.left + rule.width) // 2)
                 py = int(auto.top + auto.height // 2)
                 self.smart_click(pyscreeze.Box(px-5, py-5, 10, 10), "join room")
@@ -414,9 +425,15 @@ class BBSBot:
             else: self.transition_to("ENTER_ROOM_LIST")
             return
         t2 = self.find_image("tap2")
-        if t2: self.smart_click(t2, "reward tap 2", is_overlay=True); return
+        if t2:
+            self.smart_click(t2, "reward tap 2", is_overlay=True)
+            self.fatigue_delay(2.0) # Short wait for overlay
+            return
         t1 = self.find_image("tap1")
-        if t1: self.smart_click(t1, "reward tap 1", is_overlay=True); return
+        if t1:
+            self.smart_click(t1, "reward tap 1", is_overlay=True)
+            self.fatigue_delay(self.config.DELAY_TAP_PAUSE[0]) # 5s wait (V2 parity)
+            return
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
             self.transition_to("RECOVERY")
         time.sleep(1)
@@ -457,6 +474,7 @@ class BBSBot:
         logger.info(f"Starting bot in state: {self.state}")
         while True:
             self.ensure_window_ready()
+            self.update_fatigue() # Update waves
             self.check_session_limit()
             if self.state == "MENU": self.handle_menu()
             elif self.state == "ENTER_ROOM_LIST": self.handle_enter_room_list()
