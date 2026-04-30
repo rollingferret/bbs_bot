@@ -422,8 +422,14 @@ class BBSBot:
             rbox = pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8)
             if rbox:
                 if self.smart_click(rbox, "ready button"):
-                    self.transition_to("WAIT_FOR_START")
-                    return
+                    # Verify disappearance (V2 parity)
+                    start_verify = time.time()
+                    while time.time() - start_verify < 5:
+                        if not pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8):
+                            self.transition_to("WAIT_FOR_START")
+                            return
+                        time.sleep(0.5)
+                    logger.warning("Ready button still visible after click.")
         except: pass
         
         # Check if stuck in lobby
@@ -533,7 +539,7 @@ class BBSBot:
             t1 = pyautogui.locateOnScreen(self.config.TEMPLATES["tap1"], region=self.region, confidence=0.8)
             if t1:
                 self.smart_click(t1, "reward tap 1")
-                self.fatigue_delay(2.0)
+                self.fatigue_delay(5.0) # V2 used 5s here
                 return
             
             # Look for tap2
