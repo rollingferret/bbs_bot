@@ -328,9 +328,9 @@ class BBSBot:
         self.next_distraction_run = self.run_count + random.randint(*self.config.DISTRACTION_CHANCE)
         self.transition_to("RECOVERY")
 
-    def handle_lobby(self):
-        """Main menu navigation (LOBBY)."""
-        self.take_debug_screenshot("lobby")
+    def handle_menu(self):
+        """Main menu navigation (MENU)."""
+        self.take_debug_screenshot("menu")
         start_time = time.time()
         while time.time() - start_time < 20:
             # Check if specific quest is already visible
@@ -340,7 +340,7 @@ class BBSBot:
                     qbox = pyautogui.locateOnScreen(self.config.TEMPLATES["open_coop_quest"], region=self.region, confidence=0.8)
                     if qbox:
                         self.smart_click(qbox, "specific quest")
-                        self.transition_to("ROOM_SELECTION")
+                        self.transition_to("SCAN_ROOMS")
                         return
             except: pass
 
@@ -355,9 +355,9 @@ class BBSBot:
         
         self.transition_to("RECOVERY")
 
-    def handle_room_selection(self):
-        """Scan and join rooms."""
-        self.take_debug_screenshot("room_selection")
+    def handle_scan_rooms(self):
+        """Scan and join rooms (SCAN_ROOMS)."""
+        self.take_debug_screenshot("scan_rooms")
         try:
             # Enter room list if button visible
             ebit = pyautogui.locateOnScreen(self.config.TEMPLATES["enter_room_button"], region=self.region, confidence=0.8)
@@ -386,11 +386,11 @@ class BBSBot:
                     start_time = time.time()
                     while time.time() - start_time < 15:
                         if pyautogui.locateOnScreen(self.config.TEMPLATES["ready"], region=self.region, confidence=0.8):
-                            self.transition_to("COOP_LOBBY")
+                            self.transition_to("READY")
                             return
                         
                         # Check for popups
-                        for popup_key, next_state in [("closed_room_coop_quest_menu", "LOBBY"), ("close", "ROOM_SELECTION")]:
+                        for popup_key, next_state in [("closed_room_coop_quest_menu", "MENU"), ("close", "SCAN_ROOMS")]:
                             pbox = pyautogui.locateOnScreen(self.config.TEMPLATES[popup_key], region=self.region, confidence=0.8)
                             if pbox:
                                 logger.info(f"Join failed: {popup_key} detected.")
