@@ -403,6 +403,7 @@ class BBSBot:
         sabox = self.find_image("search_again")
         if sabox: 
             self.smart_click(sabox, "search again")
+            self.search_start_time = time.time() # Reset timeout if actively searching
             time.sleep(self.config.WAIT_SEARCH_AGAIN)
 
     def match_rooms(self, autos, rules):

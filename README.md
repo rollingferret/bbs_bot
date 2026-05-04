@@ -1,6 +1,6 @@
-# Bleach: Brave Souls Auto Co-op Bot
+# Bleach: Brave Souls Auto Co-op Bot (V3.30 'Nuclear Grade')
 
-Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enabled rooms, handles errors, loops continuously.
+An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming. V3.30 features a highly optimized background engine with "Zero-Latency" refocusing, dynamic psychological profiles (Circadian Rhythm), and 100% procedural verification.
 
 ## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
 
@@ -12,18 +12,27 @@ Automation script for Bleach: Brave Souls co-op quest farming. Finds AUTO-enable
 
 **LEGAL WARNING**: Game automation may violate Terms of Service and could result in permanent account bans. Use entirely at your own risk.
 
+## 🌟 V3.30 Key Features
+
+*   **Circadian Rhythm (Stealth Profiles):** The bot dynamically shifts between `SHIKAI_MAX` (a sweaty, aggressive grinder reacting in 0.28s) and `SHIKAI_NORMAL` (a casual player watching Netflix reacting in 0.35s) every few hours. This creates a messy, human-like statistical curve on the server side, making it virtually impossible for anti-cheat heuristics to distinguish from human stamina.
+*   **Zero-Latency Refocusing:** Uses direct Xlib memory calls to restore window focus in `< 2ms`. The bot is completely silent and will never steal your taskbar focus or drop a keystroke while you are working in another window.
+*   **33fps (0.03s) Awareness:** The internal engine polls the screen 33 times per second, allowing the bot to react the instant an animation completes.
+*   **Positive Verification Gates:** The bot never "guesses" if a click worked. It uses multi-frame stability checks (`find_stable_image`) to avoid clicking ghost animations, and will stare at the screen until it verifies a positive anchor (like the Retire button) before assuming a lobby join was successful.
+*   **Persistent Quest Watchdog:** A background timer tracks the total duration of a quest loop. If a single run takes longer than 10 minutes (due to silent network drops or fully zombified game clients), the bot automatically hard-restarts the game from Steam.
+*   **Coffee Breaks:** Every 25-45 runs, the bot takes a random 2 to 8-minute AFK break.
+
 ## Requirements
 
 - Linux with X11 (tested on Pop!_OS/Ubuntu)
 - Python 3.8+
 - Bleach: Brave Souls running in windowed mode
-- Game must be visible (bot finds window by title)
-- wmctrl - Window management utility
+- Game must be visible on the screen (bot finds window by title)
+- `wmctrl`, `xdotool`, and `xprop` installed
 
 ## Setup
 
 ```bash
-sudo apt install python3 python3-pip python3-venv xdotool wmctrl
+sudo apt install python3 python3-pip python3-venv xdotool wmctrl x11-utils
 git clone https://github.com/rollingferret/bbs_bot.git
 cd bbs_bot
 
@@ -32,86 +41,44 @@ python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Template images included for current event
-python3 bbs_bot.py
+# Run the Nuclear Grade Bot
+python3 bbs_bot_v3.py
 ```
 
 ## Usage
 
-**Normal Operation:**
+**Normal Operation (Background Farming):**
 ```bash
-python3 bbs_bot.py
+python3 bbs_bot_v3.py
 ```
-Starts farming with existing game session.
+Starts the bot and automatically attaches to the running game instance. It will seamlessly swap profiles and run until the 16-hour session limit is hit.
 
-**Test Game Restart:**
+**Test Recovery Sequence:**
 ```bash
-python3 bbs_bot.py --test-restart
+python3 bbs_bot_v3.py --test-restart
 ```
-Kills existing game, starts fresh, and navigates back to farming. Useful for testing restart functionality.
+Force-kills the game upon startup to verify the Steam relaunch and automated recovery sequences are working on your machine.
+
+**Debug Mode:**
+```bash
+python3 bbs_bot_v3.py --debug-screenshots
+```
+Saves a screenshot to `screenshots/` every time the bot transitions to a new state. Useful if the bot is getting stuck on a new event screen.
 
 ## Template Images
 
-**Included for 10 Coop Anniversary Event:**
-
-The `images/` folder contains pre-made templates for the current event:
-- `coop_quest.png` - Main co-op quest button
-- `open_coop_quest.png` - Specific quest selection button  
-- `join_coop_quest.png` - "Join" button to enter room list
-- `search_again.png` - Search again button in room list
-- `auto_icon.png` - RED "AUTO" icon in room list
-- `room_rules_valid.png` - White "Room Rules" text
-- `close.png` - Blue close/resume button (multiple contexts)
-- `ready_button.png` - Ready button in lobby
-- `retire.png` - Retire/leave room button
-- `okay.png` - Okay confirmation button
-- `closed_room_coop_quest_menu.png` - "Room closed" popup
-- `ingame_auto_off.png` - In-game AUTO button (OFF state)
-- `ingame_auto_on.png` - In-game AUTO button (ON state)  
-- `tap1.png`, `tap2.png` - Quest completion continue buttons
-- `retry.png` - Retry button after quest
-
-**For Other Events:**
-If the UI changes for future events, you'll need to update template images:
+The `images/` folder contains the required UI templates. If the game UI updates or an event changes the banner:
 1. Run the game in windowed mode
-2. Take screenshots of changed UI elements
-3. Crop to just the button/icon (tight crop)  
-4. Replace the corresponding PNG files in `images/` folder
+2. Take a screenshot of the new UI element
+3. Crop it tightly (leave no background context if possible)
+4. Replace the corresponding PNG file in the `images/` folder.
 
-## How It Works
+## Configuration & Tuning
 
-1. Scans room list for AUTO-enabled rooms with valid rules
-2. Joins rooms and handles errors (full rooms, disconnects)
-3. Clicks ready and waits for quest to start
-4. Enables AUTO in-game if needed
-5. Completes quest and retries automatically
-6. **Game restart recovery** - restarts game if stuck on loading screens
-7. Loops until stopped (Ctrl+C)
+All timing profiles, limits, and delays are located at the very top of `bbs_bot_v3.py` inside the `BotConfiguration` dataclass.
 
-## Configuration
-
-Configurable options at the top of `bbs_bot.py`:
-
-```python
-USE_X11_DIRECT_CLICKS = True  # X11 direct clicks (10ms interference)
-USE_WMCTRL_ALWAYS_ON_TOP = True  # Keep game window visible
-TEMPLATE_FOUND_DELAY = 0.05  # Template detection delay
-FOCUS_RESTORE_DELAY = 0.01  # Focus restoration timing
-```
+If you wish to change how aggressive the bot is, modify the `CIRCADIAN_PROFILES` dictionary. You can tune the cognitive reaction delays, transition speeds, and post-run breather times to your exact preferences.
 
 ## Known Issues
-
-- Linux/X11 only
-- Template dependent - breaks if game UI changes
-- Requires X11 XTEST extension
-- wmctrl compatibility varies by desktop environment (try DevilsPie for reliable window control)
-
-## Current Status
-
-- Runs 30+ consecutive quests unattended
-- 2-5 minute cycles, >95% success rate  
-- 10ms focus disruption window
-- Comprehensive error recovery system
-- **Game restart capability** for loading screen recovery
-
-See `dev_notes.md` for technical details.
+- **Linux/X11 Only:** Direct memory clicks and focus restoration rely on Xlib. This will not work on Wayland natively or Windows/macOS.
+- **Resolution Dependent:** If your screen resolution or game scaling changes drastically, the PyAutoGUI confidence templates may fail to match. Keep the window size consistent.
