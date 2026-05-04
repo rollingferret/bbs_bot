@@ -94,6 +94,7 @@ class BBSBot:
             "tap1": "images/tap1.png",
             "tap2": "images/tap2.png",
             "retry": "images/retry.png",
+            "disconnect_retry": "images/disconnect_rerty.png",
         }
 
         os.makedirs("screenshots", exist_ok=True)
@@ -111,6 +112,8 @@ class BBSBot:
         self.current_window_not_found_count = 0
         self.start_time = time.time()
         self.MAX_KEPT_SCREENSHOTS = 50
+        self.disconnect_retry_count = 0
+        self.MAX_DISCONNECT_RETRIES = 3
 
     def get_game_region(self):
         try:
@@ -238,6 +241,69 @@ class BBSBot:
             print(f"[CLEANUP] Screenshot maintenance complete. Kept last {max_files} files.")
         except Exception as e:
             print(f"[CLEANUP] Failed to clean up screenshots: {e}")
+
+    def handle_global_popups(self):
+        """Check for and handle global popups like disconnects and errors."""
+        popups = [
+            ("close", "General error close popup"),
+            ("closed_room_coop_quest_menu", "Room full/closed popup"),
+            ("okay", "Confirmation popup"),
+            ("disconnect_retry", "Disconnect retry popup"),
+        ]
+
+        for template_key, description in popups:
+            try:
+                # Use Elite Confidence and Narrow Region for disconnect_retry to avoid false positives
+                conf = self.TEMPLATE_CONFIDENCE_NORMAL
+                reg = self.region
+                
+                if template_key == "disconnect_retry":
+                    conf = 0.99  # Ultra-high confidence
+                    # Focus on the center 50% of the screen where popups appear
+                    gx, gy, gw, gh = self.region
+                    reg = (gx + gw//4, gy + gh//4, gw//2, gh//2)
+                
+                box = pyautogui.locateOnScreen(
+                    self.TEMPLATES[template_key],
+                    region=reg,
+                    confidence=conf,
+                    grayscale=False # Color is important for distinguishing red buttons
+                )
+                if box:
+                    self.log_run("POPUP", f"Global: {description} detected.")
+                    
+                    if template_key == "disconnect_retry":
+                        self.disconnect_retry_count += 1
+                        if self.disconnect_retry_count > self.MAX_DISCONNECT_RETRIES:
+                            self.log_run("ERROR", f"Max disconnect retries ({self.MAX_DISCONNECT_RETRIES}) reached. Restarting game.")
+                            self.disconnect_retry_count = 0
+                            self.state = "RESTART_GAME"
+                            return True
+                    
+                    # Click the popup button
+                    time.sleep(self.CLICK_SOAK_DELAY)
+                    random_x = random.randint(box.left, box.left + box.width - 1)
+                    random_y = random.randint(box.top, box.top + box.height - 1)
+                    self.simple_click(random_x, random_y, description)
+                    
+                    # Wait for the popup to disappear (prevents spamming)
+                    if not self.poll_for_invisibility(template_key, timeout=10, description=description):
+                        self.log_run("WARNING", f"{description} still visible after click.")
+                    
+                    # Extra cooling-off for network retries
+                    if template_key == "disconnect_retry":
+                        self.log_run("INFO", "Waiting 10s for network reconnection...")
+                        time.sleep(10)
+                    else:
+                        time.sleep(self.POPUP_DISMISS_DELAY)
+                    
+                    # Force return to menu for most popups to ensure clean state
+                    if self.state not in ["RESTART_GAME", "GAME_STARTUP"]:
+                        self.state = "MENU"
+                    return True
+            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+                pass
+        return False
 
     def handle_exit(self):
         """Print summary statistics on exit."""
@@ -379,6 +445,7 @@ class BBSBot:
             ("close", "MENU", "Error popup detected - restarting from menu"),
             ("retire", "MENU", "Stuck in lobby - restarting from menu"),
             ("okay", "MENU", "Confirmation dialog - restarting from menu"),
+            ("disconnect_retry", "MENU", "Disconnect retry popup - restarting from menu"),
         ]
 
         detected_states = []
@@ -932,6 +999,11 @@ class BBSBot:
         last_processed_state = None  # Track state from previous iteration
         while True:
             self._ensure_window_is_ready()
+            
+            # Global popup check - handles disconnects, errors, etc.
+            if self.handle_global_popups():
+                continue
+
             # --- MODIFICATION START ---
             # Check for stuck state at the beginning of each loop iteration
             if (
@@ -966,6 +1038,7 @@ class BBSBot:
                         continue  # Re-evaluate state machine immediately
             else:  # State has changed, reset stuck counter and timer
                 self.stuck_counter = 0
+                self.disconnect_retry_count = 0
                 self.last_state_change_time = time.time()
 
             last_processed_state = self.state  # Update for next iteration
