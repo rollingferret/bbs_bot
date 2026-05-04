@@ -87,7 +87,7 @@ class BotConfiguration:
     MAX_DISCONNECT_RETRIES: int = 3
     SESSION_MAX_HOURS: int = 16
     POLL_MAIN_LOOP: float = 0.1
-    POLL_UI_VERIFY: float = 0.03      # 33fps real-time awareness
+    POLL_UI_VERIFY: float = 0.1       # Relaxed to 10fps to prevent CPU/X11 lag
     POLL_RECOVERY: float = 0.5        # Baseline anchor scan
     POLL_RUNNING: float = 2.0         # End-of-quest check
     HEARTBEAT_INTERVAL: float = 60
@@ -157,6 +157,7 @@ class BBSBot:
         ("FINISH", "tap2"), ("FINISH", "retry"), 
         ("SCAN_ROOMS", "search_again"), ("ENTER_ROOM_LIST", "enter_room_button"),
         ("MENU", "open_coop_quest"), ("MENU", "coop_quest"), ("GAME_STARTUP", "game_start"),
+        ("GAME_STARTUP", "close_news"), ("GAME_STARTUP", "coop_1"), ("GAME_STARTUP", "coop_2"),
         ("MENU", "closed_room_coop_quest_menu"), ("SCAN_ROOMS", "close"),
         ("SCAN_ROOMS", "unavailable_close"), ("MENU", "disconnect_retry")
     ]
@@ -200,7 +201,7 @@ class BBSBot:
         try: self.disp = display.Display()
         except: logger.error("FATAL: X11 Display error."); sys.exit(1)
             
-        logger.info("BBS Bot V3.29 'Shikai Max' Initialized.")
+        logger.info("BBS Bot V3.32 'Startup Hardening' Initialized.")
 
     def _load_templates(self) -> None:
         for key, path in self.config.TEMPLATES.items():
@@ -329,19 +330,27 @@ class BBSBot:
 
         start_time = time.time()
         while time.time() - start_time < 20:
-            if self.find_image("open_coop_quest"):
-                qbox = self.find_image("open_coop_quest")
-                if qbox:
-                    self.smart_click(qbox, "specific quest")
-                    v_start = time.time()
-                    while time.time() - v_start < 5.0:
-                        if self.find_image("enter_room_button"):
-                            self.transition_to("ENTER_ROOM_LIST"); return
-                        time.sleep(self.config.POLL_UI_VERIFY)
+            # 1. Check if we are already on the specific quest menu
+            qbox = self.find_image("open_coop_quest")
+            if qbox:
+                self.smart_click(qbox, "specific quest")
+                v_start = time.time()
+                while time.time() - v_start < 5.0:
+                    if self.find_image("enter_room_button"):
+                        self.transition_to("ENTER_ROOM_LIST"); return
+                    time.sleep(self.config.POLL_UI_VERIFY)
                 return
+
+            # 2. Check if we are on the main game lobby (need to expand the menu)
             box = self.find_image("coop_quest")
-            if box: self.smart_click(box, "expand menu"); time.sleep(self.config.DELAY_TRANSITION)
-            else: break
+            if box: 
+                self.smart_click(box, "expand menu")
+                time.sleep(self.config.DELAY_TRANSITION)
+                continue # Loop back to find the specific quest banner
+            
+            # If neither is found, wait briefly and try again
+            time.sleep(self.config.POLL_UI_VERIFY)
+            
         self.transition_to("RECOVERY")
 
     def handle_enter_room_list(self) -> None:
@@ -466,16 +475,30 @@ class BBSBot:
             return
         rt = self.find_image("retry")
         if rt:
-            if self.smart_click(rt, "retry quest"):
+            if self.smart_click_and_verify(rt, "retry quest", "retry"):
                 self.run_count += 1
-                time.sleep(self.config.WAIT_POST_RETRY); self.transition_to("ENTER_ROOM_LIST"); return
+                if self.run_count >= self.next_distraction_run:
+                    self.transition_to("DISTRACTION")
+                else:
+                    time.sleep(self.config.WAIT_POST_RETRY)
+                    self.transition_to("ENTER_ROOM_LIST")
+                return
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY: self.transition_to("RECOVERY")
 
     def handle_game_startup(self) -> None:
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_GAME_START:
+            logger.error("Startup hung. Restarting.")
+            self.recover_game()
+            return
+            
         for key in ["game_start", "close_news", "coop_1", "coop_2"]:
             box = self.find_image(key)
-            if box: self.smart_click(box, f"startup {key}"); time.sleep(self.config.WAIT_STARTUP_STEP)
-        if self.find_image("coop_quest"): self.transition_to("MENU")
+            if box: 
+                self.smart_click(box, f"startup {key}")
+                time.sleep(self.config.WAIT_STARTUP_STEP)
+                return # Yield to main loop
+        if self.find_image("coop_quest") or self.find_image("open_coop_quest"): 
+            self.transition_to("MENU")
 
     def handle_recovery(self) -> None:
         elapsed = time.time() - self.last_state_change_time
@@ -492,7 +515,11 @@ class BBSBot:
 
     def handle_distraction(self) -> None:
         duration = random.randint(*self.config.DISTRACTION_DURATION)
-        logger.info(f"DISTRACTION: Resting for {duration}s..."); time.sleep(duration); self.transition_to("RECOVERY")
+        logger.info(f"DISTRACTION: Resting for {duration}s...")
+        time.sleep(duration)
+        self.next_distraction_run = self.run_count + random.randint(*self.config.DISTRACTION_CHANCE)
+        self.quest_watchdog = time.time() # Reset watchdog after coffee break
+        self.transition_to("RECOVERY")
 
     def retire_from_quest(self) -> None:
         logger.warning("Retiring sequence...")
@@ -510,6 +537,13 @@ class BBSBot:
         logger.warning("HARD RECOVERY initiated...")
         try: subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL)
         except: pass
+        
+        # Regenerate X11 Socket to prevent permanent paralysis on display server crash
+        try:
+            if hasattr(self, 'disp') and self.disp: self.disp.close()
+            self.disp = display.Display()
+        except: pass
+        
         time.sleep(self.config.WAIT_RESTART)
         subprocess.Popen(["steam", "-applaunch", "1201240"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         start = time.time()
@@ -517,6 +551,7 @@ class BBSBot:
             if self.find_image("game_start"): break
             time.sleep(self.config.WAIT_RESTART)
         self.get_game_region(); self.setup_window_properties(); self.transition_to("GAME_STARTUP")
+        self.quest_watchdog = time.time() # Reset watchdog after hard recovery
 
     def save_debug_screenshot(self, name: str) -> None:
         if not self.config.TAKE_DEBUG_SCREENSHOTS: return
@@ -542,7 +577,6 @@ class BBSBot:
             self.last_state_change_time = time.time()
             self.disconnect_retry_count = 0
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
-            if state == "MENU": self.quest_watchdog = time.time()
 
     def update_fatigue(self) -> None:
         elapsed = time.time() - self.start_time
@@ -558,6 +592,11 @@ class BBSBot:
             logger.error(f"WATCHDOG: Loop exceeded {self.config.TIMEOUT_QUEST_MAX}s. Hard Restarting."); self.recover_game()
 
     def ensure_window_ready(self) -> None:
+        # CPU OPTIMIZATION: Only poll OS for window geometry every 5 seconds
+        if hasattr(self, 'last_window_check') and time.time() - self.last_window_check < 5.0:
+            return
+        self.last_window_check = time.time()
+        
         try: self.get_game_region(); self.window_not_found_count = 0
         except:
             self.window_not_found_count += 1
