@@ -449,7 +449,7 @@ class BBSBot:
         autos = self.find_all("auto", confidence=self.config.CONF_NORMAL)
         if autos:
             v_rules = self.find_all("room_rules_valid", confidence=self.config.CONF_LOOSE)
-            valid = self.match_rooms(autos, v_rules)
+            valid = BBSBot.match_rooms(autos, v_rules, self.config)
             
             for auto, rule in valid:
                 local_reg = (auto.left - 5, auto.top - 5, auto.width + 10, auto.height + 10)
@@ -494,26 +494,28 @@ class BBSBot:
                     self.search_start_time = time.time()
                     time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
 
-    def match_rooms(self, autos, rules):
+    @staticmethod
+    def match_rooms(autos: List[pyscreeze.Box], rules: List[pyscreeze.Box], config: BotConfiguration) -> List[Tuple[pyscreeze.Box, pyscreeze.Box]]:
         valid = []
-        for a in self.dedupe_autos(autos):
+        for a in BBSBot.dedupe_autos(autos, config):
             ax, ay = a.left + a.width//2, a.top + a.height//2
             best_r, min_d = None, float('inf')
             for r in rules:
                 rx, ry = r.left + r.width//2, r.top + r.height//2
                 if ry > ay:
-                    d = abs(ry - ay) + abs(rx - ax) * self.config.ROOM_MATCH_WEIGHT
-                    if d < min_d and d < self.config.MAX_RULE_DISTANCE:
+                    d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
+                    if d < min_d and d < config.MAX_RULE_DISTANCE:
                         min_d, best_r = d, r
             if best_r:
                 valid.append((a, best_r))
         return valid
 
-    def dedupe_autos(self, matches):
+    @staticmethod
+    def dedupe_autos(matches: List[pyscreeze.Box], config: BotConfiguration) -> List[pyscreeze.Box]:
         unique = []
         for m in matches:
             cx, cy = m.left + m.width//2, m.top + m.height//2
-            if not any(((cx-(u.left+u.width//2))**2 + (cy-(u.top+u.height//2))**2)**0.5 < self.config.AUTO_ICON_DEDUPE_DIST for u in unique):
+            if not any(((cx-(u.left+u.width//2))**2 + (cy-(u.top+u.height//2))**2)**0.5 < config.AUTO_ICON_DEDUPE_DIST for u in unique):
                 unique.append(m)
         return unique
 
@@ -728,7 +730,7 @@ class BBSBot:
             
             # V5.6 Persistence: Re-enforce sticky/above every 5 seconds
             now = time.time()
-            if not hasattr(self, '_last_property_sync'): self._last_property_check = 0
+            if not hasattr(self, '_last_property_sync'): self._last_property_sync = 0
             if self.win_id != old_wid or now - getattr(self, '_last_property_sync', 0) > 5.0:
                 self.setup_window_properties()
                 self._last_property_sync = now
