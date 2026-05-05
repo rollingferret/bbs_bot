@@ -435,15 +435,6 @@ class BBSBot:
     def handle_scan_rooms(self) -> None:
         if self.find_image("ready"): self.transition_to("READY"); return
 
-        # V5.2 Optimization: Check Search Again FIRST if the list hasn't refreshed in a while
-        # V5.6 Fix: Rely purely on the SHIKAI profile for refresh speed, no hardcoded blocks.
-        if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN: 
-            if self.find_image("search_again"):
-                if self.smart_click("search_again", "search again"):
-                    self.search_start_time = time.time()
-                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
-                    return
-
         if time.time() - self.search_start_time > self.config.TIMEOUT_SEARCH_MAX: self.transition_to("MENU"); return
         
         autos = self.find_all("auto", confidence=self.config.CONF_NORMAL)
@@ -483,7 +474,12 @@ class BBSBot:
                                 
                         time.sleep(self.config.POLL_UI_VERIFY)
         
-        # V5.2: Search again now handled at start of loop for faster reaction
+        # V5.7 Fix: Search again logic placed AFTER room scanning to prevent shadowing
+        if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN: 
+            if self.find_image("search_again"):
+                if self.smart_click("search_again", "search again"):
+                    self.search_start_time = time.time()
+                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
 
     def match_rooms(self, autos, valid_rules, invalid_rules):
         valid = []
