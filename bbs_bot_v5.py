@@ -56,20 +56,16 @@ class BotConfiguration:
     TIMEOUT_QUEST_MAX: float = 600    # Hard watchdog for entire loop (10 mins)
     TIMEOUT_GAME_START: float = 120
     TIMEOUT_READY: float = 30
-    TIMEOUT_READY_VERIFY: float = 10.0
-    TIMEOUT_RETRY: float = 45
     TIMEOUT_RUN_START: float = 300
     TIMEOUT_TAP_VERIFY: float = 15
     TIMEOUT_SEARCH_MAX: float = 60
     TIMEOUT_LOBBY_EXPAND: float = 20.0
-    TIMEOUT_LOBBY_VERIFY: float = 5.0
     TIMEOUT_LOBBY_JOIN: float = 6.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
     
     # --- Wait Constants ---
     WAIT_RETIRE_STEP: float = 1.0     
     WAIT_DISCONNECT_COOLING: float = 10.0
-    WAIT_INGAME_AUTO_READY: float = 1.5 
     WAIT_RESTART: float = 5.0         # Game relaunch buffer
     WAIT_STARTUP_STEP: float = 2.0    # Heavy soak for splash screen transitions
     
@@ -137,7 +133,6 @@ class BotConfiguration:
             "enter_room_button": "images/join_coop_quest.png", "search_again": "images/search_again.png",
             "auto": "images/auto_icon.png", "ingame_auto_off": "images/ingame_auto_off.png",
             "ingame_auto_on": "images/ingame_auto_on.png", "room_rules_valid": "images/room_rules_valid.png",
-            "room_not_met": "images/room_not_met.png",
             "close": "images/close.png", "ready": "images/ready_button.png",
             "retire": "images/retire.png", "okay": "images/okay.png",
             "closed_room_coop_quest_menu": "images/closed_room_coop_quest_menu.png",
@@ -709,7 +704,9 @@ class BBSBot:
             self.disconnect_retry_count = 0
             self._force_refresh = False  # Reset on any major state shift
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
-            if state == "MENU": self.quest_watchdog = time.time()
+            if state == "MENU": 
+                self.quest_watchdog = time.time()
+                self.consecutive_recovery_count = 0 # Success: Reaching menu proves recovery worked
 
     def update_fatigue(self) -> None:
         elapsed = time.time() - self.fatigue_start_time
@@ -773,7 +770,7 @@ class BBSBot:
     def check_circadian_rhythm(self) -> None:
         if time.time() > self.next_profile_swap:
             self.active_profile = "SHIKAI_NORMAL" if self.active_profile == "SHIKAI_MAX" else "SHIKAI_MAX"
-            self._apply_profile(self.active_profile)
+            self.config._apply_profile(self.active_profile)
             
             duration_secs = random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
             self.next_profile_swap = time.time() + duration_secs
@@ -805,9 +802,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-restart", action="store_true")
     parser.add_argument("--debug-screenshots", action="store_true")
+    parser.add_argument("--dry-run", action="store_true", help="Monitor screen and log actions without clicking")
     args = parser.parse_args()
     bot = BBSBot()
     if args.debug_screenshots: bot.config.TAKE_DEBUG_SCREENSHOTS = True
+    if args.dry_run:
+        logger.info("DRY RUN MODE ENABLED: No clicks will be performed.")
+        # Patch the click method to be a no-op
+        bot._send_x11_click = lambda x, y: (logger.info(f"[DRY RUN] Would click at ({x}, {y})"), True)[1]
+    
     try: bot.run(test_restart=args.test_restart)
     except KeyboardInterrupt: logger.info("Stopped."); bot.log_session_summary()
     except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
