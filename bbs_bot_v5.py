@@ -78,8 +78,8 @@ class BotConfiguration:
     CONF_HIGH: float = 0.95
     CONF_READY: float = 0.95 
     CONF_LOOSE: float = 0.70
-    CONF_POPUP: float = 0.98 
-    CONF_VERIFY_ACTION: float = 0.85  # Slightly looser to confirm disappearance reliably
+    CONF_POPUP: float = 0.80 
+    CONF_VERIFY_ACTION: float = 0.80  # Match CONF_NORMAL for consistency
     AUTO_MATCH_CONFIDENCE: float = 0.92 
     
     # --- Matching Algorithm ---
@@ -212,6 +212,7 @@ class BBSBot:
         self.window_not_found_count: int = 0
         self.consecutive_recovery_count: int = 0
         self.search_start_time: float = 0
+        self._force_refresh: bool = False
         self.next_distraction_run: int = random.randint(*self.config.DISTRACTION_CHANCE)
         
         self.handlers = {
@@ -445,13 +446,15 @@ class BBSBot:
                     time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
             return
 
-        if time.time() - self.search_start_time > self.config.TIMEOUT_SEARCH_MAX: self.transition_to("MENU"); return
+        if time.time() - self.search_start_time > 20.0: 
+            logger.warning("SCAN_ROOMS: No activity for 20s. Yielding to RECOVERY.")
+            self.transition_to("RECOVERY")
+            return
         
         autos = self.find_all("auto", confidence=self.config.CONF_NORMAL)
         if autos:
             v_rules = self.find_all("room_rules_valid", confidence=self.config.CONF_LOOSE)
-            i_rules = self.find_all("room_not_met", confidence=self.config.CONF_LOOSE)
-            valid = self.match_rooms(autos, v_rules, i_rules)
+            valid = self.match_rooms(autos, v_rules)
             
             for auto, rule in valid:
                 local_reg = (auto.left - 5, auto.top - 5, auto.width + 10, auto.height + 10)
@@ -472,14 +475,17 @@ class BBSBot:
                                 return 
                             return # Successfully entered lobby but verify timed out
                         
-                        if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_HIGH): 
+                        # Localized Popup Handling (Small Blast Radius)
+                        if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_NORMAL): 
                             if self.smart_click("closed_room_coop_quest_menu", "close room full", verify_key="closed_room_coop_quest_menu"):
-                                logger.info("Room full. Refreshing list.")
-                                self._force_refresh = True
+                                logger.info("Room full. Kicked to menu. Detouring.")
+                                self.transition_to("MENU")
                                 return 
                         
-                        if self.find_image("close", confidence=self.config.CONF_HIGH): 
-                            if self.smart_click("close", "close unavailable", verify_key="close"):
+                        if self.find_image("close", confidence=self.config.CONF_NORMAL) or \
+                           self.find_image("unavailable_close", confidence=self.config.CONF_NORMAL):
+                            key = "close" if self.find_image("close") else "unavailable_close"
+                            if self.smart_click(key, "close unavailable", verify_key=key):
                                 logger.info("Room unavailable. Refreshing list.")
                                 self._force_refresh = True
                                 return 
@@ -493,27 +499,19 @@ class BBSBot:
                     self.search_start_time = time.time()
                     time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
 
-    def match_rooms(self, autos, valid_rules, invalid_rules):
+    def match_rooms(self, autos, rules):
         valid = []
         for a in self.dedupe_autos(autos):
             ax, ay = a.left + a.width//2, a.top + a.height//2
-            best_v, min_v = None, float('inf')
-            best_i, min_i = None, float('inf')
-            
-            for r in valid_rules:
+            best_r, min_d = None, float('inf')
+            for r in rules:
                 rx, ry = r.left + r.width//2, r.top + r.height//2
                 if ry > ay:
                     d = abs(ry - ay) + abs(rx - ax) * self.config.ROOM_MATCH_WEIGHT
-                    if d < min_v and d < self.config.MAX_RULE_DISTANCE: min_v, best_v = d, r
-            
-            for r in invalid_rules:
-                rx, ry = r.left + r.width//2, r.top + r.height//2
-                if ry > ay:
-                    d = abs(ry - ay) + abs(rx - ax) * self.config.ROOM_MATCH_WEIGHT
-                    if d < min_i and d < self.config.MAX_RULE_DISTANCE: min_i, best_i = d, r
-            
-            if best_v and min_v < min_i:
-                valid.append((a, best_v))
+                    if d < min_d and d < self.config.MAX_RULE_DISTANCE:
+                        min_d, best_r = d, r
+            if best_r:
+                valid.append((a, best_r))
         return valid
 
     def dedupe_autos(self, matches):
@@ -525,6 +523,17 @@ class BBSBot:
         return unique
 
     def handle_ready(self) -> None:
+        # V2 Alignment: Check for room-closure interruptions while in lobby
+        if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_NORMAL):
+            if self.smart_click("closed_room_coop_quest_menu", "room closed by host"):
+                self.transition_to("MENU"); return
+        
+        if self.find_image("close", confidence=self.config.CONF_NORMAL) or \
+           self.find_image("unavailable_close", confidence=self.config.CONF_NORMAL):
+            key = "close" if self.find_image("close") else "unavailable_close"
+            if self.smart_click(key, "lobby disconnect"):
+                self.transition_to("MENU"); return
+
         if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
             # V5.1: Small explicit soak for the lobby button
             time.sleep(self.config.DELAY_READY)
@@ -536,6 +545,11 @@ class BBSBot:
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_READY: self.transition_to("RECOVERY")
 
     def handle_check_run_start(self) -> None:
+        # V2 Alignment: Check for late-lobby closures
+        if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_NORMAL):
+            if self.smart_click("closed_room_coop_quest_menu", "room closed before start"):
+                self.transition_to("MENU"); return
+
         if self.find_image("ready", confidence=self.config.CONF_READY):
             self.transition_to("READY"); return
 
@@ -693,6 +707,7 @@ class BBSBot:
             self.prev_state, self.state = self.state, state
             self.last_state_change_time = time.time()
             self.disconnect_retry_count = 0
+            self._force_refresh = False  # Reset on any major state shift
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
             if state == "MENU": self.quest_watchdog = time.time()
 
