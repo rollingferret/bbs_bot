@@ -51,6 +51,16 @@ python3 bbs_bot_v5.py
 python3 bbs_bot_v5.py
 ```
 
+**Dry Run Mode (No Clicks):**
+```bash
+python3 bbs_bot_v5.py --dry-run
+```
+
+**Run Unit Tests:**
+```bash
+python3 test_v5_logic.py
+```
+
 **Verify Recovery Loop:**
 ```bash
 python3 bbs_bot_v5.py --test-restart
@@ -68,6 +78,10 @@ The `images/` folder contains the required UI templates. If the game UI updates 
 2. Take a screenshot of the new UI element
 3. Crop it tightly (leave no background context if possible)
 4. Replace the corresponding PNG file in the `images/` folder.
+
+## Logic Testing
+
+V5 includes a dedicated unit test suite (`test_v5_logic.py`) that validates the bot's core decision-making logic (room matching, icon deduplication, and proximity pairing) without needing the game running. This ensures the "brain" remains accurate after any configuration or code changes.
 
 ## Configuration & Tuning
 
