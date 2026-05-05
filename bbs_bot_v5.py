@@ -42,11 +42,11 @@ class BotConfiguration:
     DELAY_POPUP: float = 1.0          
     DELAY_TAP: float = 4.0            # Wait time AFTER reward tap
     DELAY_READY: float = 0.50         
-    WAIT_ROOM_LOAD: float = 0.4       
+    WAIT_ROOM_LOAD: float = 0.6       # Increased to allow room list expansion
     WAIT_SEARCH_AGAIN: float = 0.8    
     WAIT_LOBBY_READY: float = 0.5     
     WAIT_POST_RETRY: float = 1.5      
-    WAIT_REFOCUS: float = 0.06        # Safest reclaim window for GNOME
+    WAIT_REFOCUS: float = 0.02        # Faster Reclaim to beat focus stealing
     WAIT_REFRESH_COOLDOWN: float = 0.6
     WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
@@ -71,7 +71,7 @@ class BotConfiguration:
     WAIT_DISCONNECT_COOLING: float = 10.0
     WAIT_INGAME_AUTO_READY: float = 1.5 
     WAIT_RESTART: float = 5.0         # Game relaunch buffer
-    WAIT_STARTUP_STEP: float = 1.0    # Balanced splash fade wait
+    WAIT_STARTUP_STEP: float = 2.0    # Heavy soak for splash screen transitions
     
     # --- Vision & Matching ---
     CONF_NORMAL: float = 0.80 
@@ -114,17 +114,17 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": { # "PRO GAMER": Elite focus, perfect cadence
-                "DELAY_COGNITIVE": (0.30, 0.05), "DELAY_SNIPE": 0.20, "DELAY_TRANSITION": 0.6,
+                "DELAY_COGNITIVE": (0.38, 0.05), "DELAY_SNIPE": 0.20, "DELAY_TRANSITION": 0.5,
                 "DELAY_SOAK": 0.2, "DELAY_TAP": 1.5,
-                "DELAY_POPUP": 1.0, "DELAY_READY": 0.50, "WAIT_ROOM_LOAD": 0.3,
+                "DELAY_POPUP": 1.5, "DELAY_READY": 0.70, "WAIT_ROOM_LOAD": 0.3,
                 "WAIT_SEARCH_AGAIN": 0.4, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
                 "WAIT_REFRESH_COOLDOWN": 0.5, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "DURATION_MINS": (45, 90)
             },
             "SHIKAI_NORMAL": { # "CASUAL": Distracted, watching Netflix
-                "DELAY_COGNITIVE": (0.50, 0.10), "DELAY_SNIPE": 0.40, "DELAY_TRANSITION": 1.2,
+                "DELAY_COGNITIVE": (0.55, 0.10), "DELAY_SNIPE": 0.40, "DELAY_TRANSITION": 1.2,
                 "DELAY_SOAK": 0.4, "DELAY_TAP": 2.5,
-                "DELAY_POPUP": 1.6, "DELAY_READY": 0.80, "WAIT_ROOM_LOAD": 0.6,
+                "DELAY_POPUP": 2.0, "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 0.6,
                 "WAIT_SEARCH_AGAIN": 1.2, "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0,
                 "WAIT_REFRESH_COOLDOWN": 1.2, "WAIT_STABILIZE_ANIMATION": 1.2,
                 "DURATION_MINS": (60, 180)
@@ -324,8 +324,9 @@ class BBSBot:
         success = self._send_x11_click(click_x, click_y)
         logger.info(f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
 
-        # 6. Unconditional Refocus (V2 Hammer)
-        if success and current_focus and current_focus != self.win_id:
+        # 6. Unconditional Refocus (V2-Exact Hammer)
+        if success and current_focus:
+            # Reverted to V2 timing: 0.02s is the proven window for your OS
             time.sleep(self.config.WAIT_REFOCUS)
             try:
                 subprocess.run(["xdotool", "windowactivate", "--sync", current_focus, "windowraise", current_focus], check=False, stderr=subprocess.DEVNULL)
@@ -435,8 +436,8 @@ class BBSBot:
         if self.find_image("ready"): self.transition_to("READY"); return
 
         # V5.2 Optimization: Check Search Again FIRST if the list hasn't refreshed in a while
-        # This eliminates the "vision lag" where it scans for rooms on a stale/empty list.
-        if time.time() - self.search_start_time > 2.0: # If we haven't seen a room in 2s, refresh aggressively
+        # V5.6 Fix: Rely purely on the SHIKAI profile for refresh speed, no hardcoded blocks.
+        if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN: 
             if self.find_image("search_again"):
                 if self.smart_click("search_again", "search again"):
                     self.search_start_time = time.time()
@@ -704,9 +705,13 @@ class BBSBot:
             old_wid = self.win_id
             self.get_game_region()
             self.window_not_found_count = 0
-            # If the window ID changed (e.g. game re-created its window), re-apply properties
-            if self.win_id != old_wid:
+            
+            # V5.6 Persistence: Re-enforce sticky/above every 5 seconds
+            now = time.time()
+            if not hasattr(self, '_last_property_sync'): self._last_property_check = 0
+            if self.win_id != old_wid or now - getattr(self, '_last_property_sync', 0) > 5.0:
                 self.setup_window_properties()
+                self._last_property_sync = now
         except Exception:
             self.window_not_found_count += 1
             if self.window_not_found_count >= self.config.WINDOW_NOT_FOUND_RETRIES:
