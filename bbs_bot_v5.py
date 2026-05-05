@@ -260,10 +260,6 @@ class BBSBot:
         t_start = time.time()
         try:
             res = pyautogui.locateOnScreen(template, region=reg, confidence=conf)
-            if not res:
-                # Restore Confidence Fallback: Essential for slow fades and varied lighting
-                res = pyautogui.locateOnScreen(template, region=reg, confidence=conf - 0.05)
-            
             if res:
                 elapsed = time.time() - t_start
                 if elapsed > 0.5: # Only log slow scans to find bottlenecks
@@ -285,7 +281,7 @@ class BBSBot:
         try:
             res = list(pyautogui.locateAllOnScreen(template, region=self.region, confidence=confidence))
             if res: return res
-            return list(pyautogui.locateAllOnScreen(template, region=self.region, confidence=confidence - 0.05))
+            return []
         except Exception: return []
 
     # --- THE V4 STEALTH CORE ---
@@ -400,25 +396,26 @@ class BBSBot:
         return False
 
     def handle_menu(self) -> None:
-        if self.find_image("enter_room_button"): self.transition_to("ENTER_ROOM_LIST"); return
-        if self.find_image("ready"): self.transition_to("READY"); return
-        if self.find_image("search_again"): self.transition_to("SCAN_ROOMS"); return
-
-        # Reactive State-Machine Logic: Do one thing per loop tick
+        # V5.8 Optimization: Check the "Happy Path" first to eliminate vision lag
+        # MUST check open_coop_quest first, because coop_quest remains visible even when expanded
         if self.find_image("open_coop_quest"):
             self.smart_click("open_coop_quest", "specific quest", "enter_room_button", target_state="ENTER_ROOM_LIST", wait_for_appearance=True)
             return
-        
+            
         if self.find_image("coop_quest"): 
             self.smart_click("coop_quest", "expand menu", "open_coop_quest", wait_for_appearance=True)
             return
+
+        # Anchors: Only checked if the normal menu buttons are missing
+        if self.find_image("enter_room_button"): self.transition_to("ENTER_ROOM_LIST"); return
+        if self.find_image("ready", confidence=self.config.CONF_READY): self.transition_to("READY"); return
+        if self.find_image("search_again"): self.transition_to("SCAN_ROOMS"); return
         
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_EXPAND:
             self.transition_to("RECOVERY")
 
     def handle_enter_room_list(self) -> None:
-        if self.find_image("ready"): self.transition_to("READY"); return
-        
+        # Normal Flow First
         if self.find_stable_image("enter_room_button"):
             if self.smart_click("enter_room_button", "enter room list"):
                 start_load = time.time()
@@ -430,10 +427,23 @@ class BBSBot:
                     time.sleep(self.config.POLL_UI_VERIFY)
                 logger.warning("Failed to verify room list load. Re-evaluating state.")
                 return 
+                
+        # Anchors Second
+        if self.find_image("ready", confidence=self.config.CONF_READY): self.transition_to("READY"); return
         self.transition_to("RECOVERY")
 
     def handle_scan_rooms(self) -> None:
-        if self.find_image("ready"): self.transition_to("READY"); return
+        if self.find_image("ready", confidence=self.config.CONF_READY): self.transition_to("READY"); return
+
+        # V5.8 Fix: Guaranteed Refresh (No Blast Radius)
+        # If a join failed, ignore all rooms until we hit refresh
+        if getattr(self, '_force_refresh', False):
+            if self.find_image("search_again"):
+                if self.smart_click("search_again", "search again"):
+                    self.search_start_time = time.time()
+                    self._force_refresh = False
+                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
+            return
 
         if time.time() - self.search_start_time > self.config.TIMEOUT_SEARCH_MAX: self.transition_to("MENU"); return
         
@@ -462,15 +472,17 @@ class BBSBot:
                                 return 
                             return # Successfully entered lobby but verify timed out
                         
-                        if self.find_image("closed_room_coop_quest_menu", confidence=0.9): 
+                        if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_HIGH): 
                             if self.smart_click("closed_room_coop_quest_menu", "close room full", verify_key="closed_room_coop_quest_menu"):
                                 logger.info("Room full. Refreshing list.")
-                                return # V5.6: Exit to trigger Search Again refresh on next tick
+                                self._force_refresh = True
+                                return 
                         
-                        if self.find_image("close", confidence=0.9): 
+                        if self.find_image("close", confidence=self.config.CONF_HIGH): 
                             if self.smart_click("close", "close unavailable", verify_key="close"):
                                 logger.info("Room unavailable. Refreshing list.")
-                                return # V5.6: Exit to trigger Search Again refresh on next tick
+                                self._force_refresh = True
+                                return 
                                 
                         time.sleep(self.config.POLL_UI_VERIFY)
         
