@@ -1,8 +1,18 @@
-# Bleach: Brave Souls Auto Co-op Bot (V5.0)
+# Bleach: Brave Souls Auto Co-op Bot (V5.0 'Hollow Engine')
 
 An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming. V5.0 features a high-performance state-machine architecture, optimized vision system, and reactive interaction logic.
 
-## 🌟 V5.0 Features
+## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
+
+**NO SUPPORT PROVIDED**: This project is released as-is with no warranty, support, or maintenance. The author accepts no responsibility for:
+- Account bans or penalties from game publishers
+- Terms of Service violations 
+- System damage or data loss
+- Any other consequences of using this software
+
+**LEGAL WARNING**: Game automation may violate Terms of Service and could result in permanent account bans. Use entirely at your own risk.
+
+## 🌟 V5.0 Key Features
 
 *   **Reactive Interaction Engine:** Combines fire-and-forget clicking with real-time UI polling. It moves at peak human speeds without the sluggishness of traditional bots.
 *   **Pure X11 Ghost Clicks:** Uses headless X11 events to click background windows. Includes an aggressive refocus hammer to ensure the terminal remains the active window.
@@ -51,6 +61,18 @@ python3 bbs_bot_v5.py --test-restart
 python3 bbs_bot_v5.py --debug-screenshots
 ```
 
-## Configuration
+## Template Images
 
-All timing profiles and limits are located at the top of `bbs_bot_v5.py` inside the `BotConfiguration` dataclass. Every delay, cooldown, and timeout is fully configurable.
+The `images/` folder contains the required UI templates. If the game UI updates or an event changes the banner:
+1. Run the game in windowed mode
+2. Take a screenshot of the new UI element
+3. Crop it tightly (leave no background context if possible)
+4. Replace the corresponding PNG file in the `images/` folder.
+
+## Configuration & Tuning
+
+All timing profiles, limits, and delays are located at the top of `bbs_bot_v5.py` inside the `BotConfiguration` dataclass. Every delay, cooldown, and timeout is fully configurable via the `SHIKAI` profiles.
+
+## Known Issues
+- **Linux/X11 Only:** Direct memory clicks and background execution rely on Xlib. This will not work natively on Wayland, Windows, or macOS.
+- **Resolution Dependent:** If your screen resolution or game scaling changes drastically, the PyAutoGUI confidence templates may fail to match. Keep the window size consistent.
