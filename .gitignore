@@ -4,6 +4,9 @@ venv/
 # Python cache
 __pycache__/
 
+# mypy cache
+.mypy_cache
+
 # Ruff cache
 .ruff_cache/
 
