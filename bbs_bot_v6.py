@@ -19,7 +19,7 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
-        logging.FileHandler("v5_behavior.log"),
+        logging.FileHandler("v6_behavior.log"),
         logging.StreamHandler(sys.stdout)
     ]
 )
@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BotConfiguration:
-    """Centralized configuration for the BBS Bot V5.0 'Hollow Engine'."""
+    """Centralized configuration for the BBS Bot V6.0 'Snapshot Engine'."""
     RAW_TITLE: str = "Bleach: Brave Souls"
     GAME_WINDOW_TITLE: str = "Bleach: Brave Souls"
     
@@ -182,7 +182,7 @@ class GameWindowNotFoundError(Exception): pass
 
 class BBSBot:
     """
-    Bleach: Brave Souls Autonomous Agent V5.0 'Hollow Engine'.
+    Bleach: Brave Souls Autonomous Agent V6.0 'Snapshot Engine'.
     Universal "Check -> Soak -> Click -> Verify" Architecture. Zero xdotool lockups.
     """
     
@@ -236,7 +236,7 @@ class BBSBot:
         except Exception:
             logger.error("FATAL: X11 Display error."); sys.exit(1)
             
-        logger.info("BBS Bot V5.0 'Hollow Engine' Initialized.")
+        logger.info("BBS Bot V6.0 'Snapshot Engine' Initialized.")
 
     def _load_templates(self) -> None:
         for key, path in self.config.TEMPLATES.items():
