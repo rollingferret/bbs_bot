@@ -642,15 +642,19 @@ class BBSBot:
             return
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX:
             self.transition_to("RECOVERY")
-        time.sleep(self.config.POLL_RUNNING)
 
     def handle_finish(self, haystack: Optional[Image.Image] = None) -> None:
+        # Precision Counting: The moment we see rewards or retry, the run is complete
+        anchors = ["tap1", "tap2", "retry"]
+        is_done = any(self.find_image(k, haystack=haystack) for k in anchors)
+        if is_done and not self._run_counted:
+            self.run_count += 1
+            self._run_counted = True
+            logger.info(f"RUN COMPLETE: Total runs recorded: {self.run_count}")
+
         if self.find_image("tap1", haystack=haystack):
             if self.smart_click("tap1", "reward tap1"):
                 time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
-                if not self._run_counted:
-                    self.run_count += 1
-                    self._run_counted = True
                 self.quest_watchdog = time.time()
             return
         if self.find_image("tap2", haystack=haystack):
@@ -661,7 +665,7 @@ class BBSBot:
         if self.find_image("retry", haystack=haystack):
             if self.smart_click("retry", "retry quest", verify_key="retry", verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD):
                 self.consecutive_recovery_count = 0 
-                logger.info(f"Run #{self.run_count} complete. Next distraction at run {self.next_distraction_run}.")
+                logger.info(f"Next distraction at run {self.next_distraction_run}.")
                 time.sleep(self.config.WAIT_POST_RETRY)
                 if self.run_count >= self.next_distraction_run:
                     self.transition_to("DISTRACTION")
@@ -839,56 +843,58 @@ class BBSBot:
 
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
-            # Search ALL windows by name (not just visible) to enable workspace recovery
-            wids = subprocess.check_output(["xdotool", "search", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
-            valid_wid = None
-            for wid in wids:
-                try:
-                    pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
-                    cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
-                    if "BleachBraveSouls" in cmd:
-                        xprop = subprocess.check_output(["xprop", "-id", wid, "WM_CLASS"], text=True, stderr=subprocess.DEVNULL)
-                        if "steam_app_1201240" in xprop.lower() or "bleach" in xprop.lower():
-                            valid_wid = wid
-                            break
-                except Exception:
-                    continue
-            
-            if not valid_wid:
+            now = time.time()
+            # 1. Search Logic: Find the window if we don't have it or need to refresh
+            if not self.win_id or (now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC):
+                wids = subprocess.check_output(["xdotool", "search", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+                valid_wid = None
+                for wid in wids:
+                    try:
+                        pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
+                        cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
+                        if "BleachBraveSouls" in cmd:
+                            xprop = subprocess.check_output(["xprop", "-id", wid, "WM_CLASS"], text=True, stderr=subprocess.DEVNULL)
+                            if "steam_app_1201240" in xprop.lower() or "bleach" in xprop.lower():
+                                valid_wid = wid
+                                break
+                    except Exception:
+                        continue
+                self.win_id = valid_wid
+                self._last_property_sync = now
+
+            if not self.win_id:
                 raise GameWindowNotFoundError()
 
-            # Proactive Restoration: If found but not on top/visible, pull it back
+            # 2. Passive Restoration: Pure State Enforcement
             try:
-                # 1. Check if minimized
-                wm_state = subprocess.check_output(["xprop", "-id", valid_wid, "WM_STATE"], text=True, stderr=subprocess.DEVNULL)
+                # Check minimized state
+                wm_state = subprocess.check_output(["xprop", "-id", self.win_id, "WM_STATE"], text=True, stderr=subprocess.DEVNULL)
                 is_minimized = "iconic" in wm_state.lower()
                 
-                # 2. Check desktop (handle sticky windows which have desktop -1 / 4294967295)
-                curr_dsktp = subprocess.check_output(["xdotool", "get_desktop"], text=True, stderr=subprocess.DEVNULL).strip()
-                window_dsktp_out = subprocess.check_output(["xprop", "-id", valid_wid, "_NET_WM_DESKTOP"], text=True, stderr=subprocess.DEVNULL)
-                is_sticky = "4294967295" in window_dsktp_out
-                is_on_curr = curr_dsktp in window_dsktp_out
+                # Check sticky state (-1 or 4294967295 means Sticky)
+                window_dsktp = subprocess.check_output(["xdotool", "get_desktop_for_window", self.win_id], text=True, stderr=subprocess.DEVNULL).strip()
+                is_sticky = window_dsktp == "-1" or window_dsktp == "4294967295"
                 
-                if is_minimized or (not is_sticky and not is_on_curr):
-                    logger.info("VISION: Game hidden or on other workspace. Restoring visibility...")
-                    subprocess.run(["wmctrl", "-i", "-a", valid_wid], check=False, stderr=subprocess.DEVNULL)
-                    subprocess.run(["xdotool", "windowactivate", "--sync", valid_wid], check=False, stderr=subprocess.DEVNULL)
-                    time.sleep(0.5) # Give WM time to move it
+                if is_minimized or not is_sticky:
+                    logger.info("VISION: Enforcing sticky focus...")
+                    # Force properties (window comes to current desktop)
+                    subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
+                    if is_minimized:
+                        # Gently lift to top
+                        subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
+                    time.sleep(0.3)
             except Exception:
                 pass
 
-            geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", valid_wid], text=True, stderr=subprocess.DEVNULL).splitlines()
+            # 3. Geometry Sync
+            geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", self.win_id], text=True, stderr=subprocess.DEVNULL).splitlines()
             geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
-            self.win_id = valid_wid
             sw, sh = pyautogui.size()
 
-            # Robust boundary clamping for partially off-screen windows
             gx, gy, gw, gh = geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
-            rx = max(0, gx)
-            ry = max(0, gy)
-            rw = min(gw - (rx - gx), sw - rx)
-            rh = min(gh - (ry - gy), sh - ry)
-
+            rx, ry = max(0, gx), max(0, gy)
+            rw, rh = min(gw - (rx - gx), sw - rx), min(gh - (ry - gy), sh - ry)
+            
             self.region = (rx, ry, rw, rh)
             return self.region
         except Exception as e:
@@ -898,7 +904,6 @@ class BBSBot:
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
             # Targeted by unique ID (-i) to prevent conflicts with Browser/YouTube content
             subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
-
     def log_session_summary(self) -> None:
         elapsed = time.time() - self.start_time
         avg_run = (elapsed / 60.0) / self.run_count if self.run_count > 0 else 0.0
@@ -908,6 +913,7 @@ class BBSBot:
         logger.info(f"Avg Time/Run: {avg_run:.2f} mins")
         logger.info(f"Disconnects: {self.disconnect_retry_count}")
         logger.info("-----------------------")
+
 
     def check_circadian_rhythm(self) -> None:
         if time.time() > self.next_profile_swap:
