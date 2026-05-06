@@ -1,4 +1,4 @@
-# BBS Quest Bot - V7.2 (Field Build)
+# BBS Quest Bot - V6.5 (Field Build)
 
 Technical interaction script for automated quest loops in Bleach: Brave Souls.
 

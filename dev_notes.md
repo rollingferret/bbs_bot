@@ -1,10 +1,10 @@
-# Engineering Log - BBS Bot (V7.2 Build)
+# Engineering Log - BBS Bot (V6.5 Build)
 
 ## System Evolution (Trace)
 *   **V2:** Hardcoded sleeps. Poor efficiency, high stability.
 *   **V3:** High-cadence async. Fast but prone to state-drift and animation race conditions.
 *   **V5:** Unit-tested state machine. Robust but high CPU overhead due to redundant scans.
-*   **V7:** Refactored Vision Engine + Sub-process caching. Final production build.
+*   **V6.5:** Refactored Vision Engine + Sub-process caching. Final production build.
 
 ## Technical Problem/Solution Log
 
