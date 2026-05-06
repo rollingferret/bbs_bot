@@ -14,7 +14,7 @@ Script-based autonomous agent utilizing a state-machine architecture. Focus is o
 ### 2. Focus & Persistence (Sword & Shield)
 *   **Shield (Passive):** Uses `wmctrl` to force `sticky` and `above` flags. The window follows the user across all workspaces silently.
 *   **Sword (Active):** Monitors `WM_STATE` and `_NET_WM_DESKTOP`. If the window is minimized or loses stickiness, the bot re-applies the flags. 
-*   **Politeness:** Replaced `windowactivate` with `windowraise` to prevent the Window Manager from stealing the user's workspace.
+*   **Politeness (Capturing Reclaim):** Captures the user's active window before every click and forcefully returns focus instantly via `windowactivate --sync`. This ensures the user stays in control while the bot clicks in the background.
 
 ### 3. Auto-Management (Dual Gate)
 *   **Logic:** Prioritizes the Green (ON) state check at 0.85 confidence. If Green is detected, the check exits. 

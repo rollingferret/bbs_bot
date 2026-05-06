@@ -14,9 +14,9 @@
 *   **Implementation:** All sub-checks (Auto-quadrant, Reward anchors) use coordinate math to slice the existing memory buffer.
 
 ### 2. Focus Jumps & Workspace Drift
-*   **Problem:** Using `windowactivate` forced the Window Manager to jump the user to the game's original workspace.
-*   **Solution:** Passive restoration via `wmctrl` flags (`sticky,above`) and `windowraise`.
-*   **Implementation:** Monitors window properties via `xprop`. If state != sticky, re-apply flags. Window "follows" the user silently without stealing workspace focus.
+*   **Problem:** Background clicks often cause the Window Manager to steal focus or pop the taskbar.
+*   **Solution:** **Focus Capture & Reclaim**.
+*   **Implementation:** Captures the `current_focus` ID immediately before any interaction. Performs the ghost click, then instantly runs `xdotool windowactivate --sync` on the user's window. This return-handshake happens within milliseconds, preventing the OS from shifting focus.
 
 ### 3. Loop Latency (Shell Spawns)
 *   **Problem:** Spawning `xdotool` search processes every 100ms introduced ~40ms of kernel-level latency.
