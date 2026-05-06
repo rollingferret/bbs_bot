@@ -91,11 +91,11 @@ class BotConfiguration:
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
 
     # --- Operational Safety ---
-    WINDOW_NOT_FOUND_RETRIES: int = 5
+    WINDOW_NOT_FOUND_RETRIES: int = 60 # 6 seconds at 0.1s loop
     MAX_DISCONNECT_RETRIES: Tuple[int, int] = (8, 16)
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
-    POLL_MAIN_LOOP: float = 0.05
+    POLL_MAIN_LOOP: float = 0.1
     POLL_UI_VERIFY: float = 0.05
     POLL_POPUP: float = 0.5
     POLL_RECOVERY: float = 0.5
@@ -232,6 +232,7 @@ class BBSBot:
         self._last_popup_check: float = 0.0
         self._last_recovery_log: int = 0
         self._last_property_sync: float = 0.0
+        self._run_counted: bool = False
         
         self.handlers = {
             "MENU": self.handle_menu, "ENTER_ROOM_LIST": self.handle_enter_room_list,
@@ -528,9 +529,10 @@ class BBSBot:
                         if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
                             time.sleep(self.config.DELAY_READY)
                             if self.smart_click("ready", "snap ready", verify_key="ready", custom_delay=self.config.WAIT_LOBBY_READY, target_state="CHECK_RUN_START"):
+                                self._run_counted = False
                                 return 
+                            self._run_counted = False
                             return 
-                        
                         if self.find_image("closed_room_coop_quest_menu", confidence=self.config.CONF_NORMAL): 
                             if self.smart_click("closed_room_coop_quest_menu", "close room full", verify_key="closed_room_coop_quest_menu"):
                                 logger.info("Room full. Kicked to menu. Detouring.")
@@ -646,7 +648,9 @@ class BBSBot:
         if self.find_image("tap1", haystack=haystack):
             if self.smart_click("tap1", "reward tap1"):
                 time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
-                self.run_count += 1
+                if not self._run_counted:
+                    self.run_count += 1
+                    self._run_counted = True
                 self.quest_watchdog = time.time()
             return
         if self.find_image("tap2", haystack=haystack):
@@ -835,7 +839,8 @@ class BBSBot:
 
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
-            wids = subprocess.check_output(["xdotool", "search", "--onlyvisible", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+            # Search ALL windows by name (not just visible) to enable workspace recovery
+            wids = subprocess.check_output(["xdotool", "search", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
             valid_wid = None
             for wid in wids:
                 try:
@@ -848,8 +853,30 @@ class BBSBot:
                             break
                 except Exception:
                     continue
+            
             if not valid_wid:
                 raise GameWindowNotFoundError()
+
+            # Proactive Restoration: If found but not on top/visible, pull it back
+            try:
+                # 1. Check if minimized
+                wm_state = subprocess.check_output(["xprop", "-id", valid_wid, "WM_STATE"], text=True, stderr=subprocess.DEVNULL)
+                is_minimized = "iconic" in wm_state.lower()
+                
+                # 2. Check desktop (handle sticky windows which have desktop -1 / 4294967295)
+                curr_dsktp = subprocess.check_output(["xdotool", "get_desktop"], text=True, stderr=subprocess.DEVNULL).strip()
+                window_dsktp_out = subprocess.check_output(["xprop", "-id", valid_wid, "_NET_WM_DESKTOP"], text=True, stderr=subprocess.DEVNULL)
+                is_sticky = "4294967295" in window_dsktp_out
+                is_on_curr = curr_dsktp in window_dsktp_out
+                
+                if is_minimized or (not is_sticky and not is_on_curr):
+                    logger.info("VISION: Game hidden or on other workspace. Restoring visibility...")
+                    subprocess.run(["wmctrl", "-i", "-a", valid_wid], check=False, stderr=subprocess.DEVNULL)
+                    subprocess.run(["xdotool", "windowactivate", "--sync", valid_wid], check=False, stderr=subprocess.DEVNULL)
+                    time.sleep(0.5) # Give WM time to move it
+            except Exception:
+                pass
+
             geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", valid_wid], text=True, stderr=subprocess.DEVNULL).splitlines()
             geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
             self.win_id = valid_wid
