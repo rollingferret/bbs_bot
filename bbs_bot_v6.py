@@ -46,8 +46,8 @@ class BotConfiguration:
     WAIT_SEARCH_AGAIN: float = 0.7    
     WAIT_LOBBY_READY: float = 0.3     
     WAIT_POST_RETRY: float = 1.0
-    WAIT_REFOCUS: float = 0.02        
-    WAIT_REFRESH_COOLDOWN: float = 0.9
+    WAIT_REFOCUS: float = 0.02
+    WAIT_REFRESH_COOLDOWN: float = 0.8
     WAIT_STABILIZE_ANIMATION: float = 0.8
     SAFETY_FLOOR_FACTOR: float = 0.05
     
@@ -62,7 +62,7 @@ class BotConfiguration:
     TIMEOUT_LOBBY_JOIN: float = 6.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
     TIMEOUT_SCAN_IDLE: float = 20.0
-    TIMEOUT_VERIFY_UI: float = 1.0
+    TIMEOUT_VERIFY_UI: float = 0.5
     
     # --- Wait Constants ---
     WAIT_RETIRE_STEP: float = 1.0     
@@ -419,7 +419,7 @@ class BBSBot:
             self.transition_to("RECOVERY")
 
     def handle_enter_room_list(self, haystack: Optional[Image.Image] = None) -> None:
-        if self.find_stable_image("enter_room_button"):
+        if self.find_image("enter_room_button", haystack=haystack):
             if self.smart_click("enter_room_button", "enter room list", haystack=haystack):
                 start_load = time.time()
                 while time.time() - start_load < self.config.TIMEOUT_ROOM_LIST_LOAD:
@@ -562,7 +562,7 @@ class BBSBot:
     def handle_running(self, haystack: Optional[Image.Image] = None) -> None:
         if self.config.MANAGE_INGAME_AUTO:
             if self.find_image("ingame_auto_off", confidence=self.config.AUTO_MATCH_CONFIDENCE, haystack=haystack):
-                self.smart_click("ingame_auto_off", "enable auto", verify_key="ingame_auto_on", wait_for_appearance=True, confidence=self.config.AUTO_MATCH_CONFIDENCE, haystack=haystack)
+                self.smart_click("ingame_auto_off", "enable auto", verify_key="ingame_auto_on", wait_for_appearance=True, confidence=self.config.AUTO_MATCH_CONFIDENCE)
             
         if self.find_image("tap1", haystack=haystack): self.transition_to("FINISH"); return
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX: self.transition_to("RECOVERY")
@@ -570,17 +570,17 @@ class BBSBot:
 
     def handle_finish(self, haystack: Optional[Image.Image] = None) -> None:
         if self.find_image("tap1", haystack=haystack):
-            if self.smart_click("tap1", "reward tap1", haystack=haystack):
+            if self.smart_click("tap1", "reward tap1"):
                 time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
                 self.quest_watchdog = time.time()
             return
         if self.find_image("tap2", haystack=haystack):
-            if self.smart_click("tap2", "reward tap2", haystack=haystack):
+            if self.smart_click("tap2", "reward tap2"):
                 time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
                 self.quest_watchdog = time.time()
             return
         if self.find_image("retry", haystack=haystack):
-            if self.smart_click("retry", "retry quest", verify_key="retry", haystack=haystack):
+            if self.smart_click("retry", "retry quest", verify_key="retry"):
                 self.run_count += 1
                 self.consecutive_recovery_count = 0 
                 logger.info(f"Run #{self.run_count} complete. Next distraction at run {self.next_distraction_run}.")
