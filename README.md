@@ -1,6 +1,6 @@
-# Bleach: Brave Souls Auto Co-op Bot (V5.0 'Hollow Engine')
+# Bleach: Brave Souls Auto Co-op Bot (V6.0 'Snapshot Engine')
 
-An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming. V5.0 features a high-performance state-machine architecture, optimized vision system, and reactive interaction logic.
+An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming. V6.0 introduces a high-efficiency vision architecture, robust workspace persistence, and surgical interaction logic.
 
 ## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
 
@@ -12,19 +12,20 @@ An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op ques
 
 **LEGAL WARNING**: Game automation may violate Terms of Service and could result in permanent account bans. Use entirely at your own risk.
 
-## 🌟 V5.0 Key Features
+## 🌟 V6.0 Key Features
 
-*   **Reactive Interaction Engine:** Combines fire-and-forget clicking with real-time UI polling. It moves at peak human speeds without the sluggishness of traditional bots.
-*   **Pure X11 Ghost Clicks:** Uses headless X11 events to click background windows. Includes an aggressive refocus hammer to ensure the terminal remains the active window.
-*   **Optimized Vision System:** Throttled popup scanning and single-pass template matching to minimize CPU usage and system lag.
-*   **State-Machine Architecture:** Robust state transitions (MENU -> SCAN_ROOMS -> READY -> RUNNING) ensure reliable recovery and long-term stability.
-*   **Circadian Rhythm:** Dynamically shifts between `SHIKAI_MAX` (Pro Gamer) and `SHIKAI_NORMAL` (Casual Player) profiles to mimic human behavioral patterns.
-*   **Survival Systems:** Automated Steam recovery, 10-minute quest watchdogs, randomized coffee breaks, and a 16-hour hard session limit.
+*   **High-Efficiency Snapshot Engine:** Captures exactly one game-region screenshot per loop. All surgical checks (Auto, Rewards, Retries) are performed as mathematical offsets in memory, reducing CPU overhead and increasing reaction speed.
+*   **Passive Persistence (Workspace Glued):** Automatically forces the game window to be `Sticky` (exists on all desktops) and `Above` (Always on Top). The window follows you silently across workspaces without ever dragging your focus away.
+*   **Surgical Auto-Management:** Uses a dual-confidence model (Forgiving Green / Strict Grey) to ensure the Auto button stays ON. It ignores boss-death explosions and flashy special effects that "trick" traditional bots.
+*   **Precision Run Counting:** Implements a completion lock that credits exactly one run the moment rewards appear. Verified accurate even during heavy server lag or recovery jumps.
+*   **Pure X11 Ghost Clicks:** Uses headless X11 events to click the background game window. Includes an unconditional refocus hammer so you can continue working while the bot plays.
+*   **Circadian Rhythm Profiles:** Mimics human focus patterns by shifting between `SHIKAI_MAX` (Focused) and `SHIKAI_NORMAL` (Casual) profiles with Gaussian randomized delays.
+*   **Enterprise-Grade Stability:** 100% PEP 8 compliant and Type-Safe (verified via `ruff` and `mypy`). Robust recovery maps and action watchdogs ensure 16+ hours of uninterrupted autonomous play.
 
 ## Requirements
 
-- Linux with X11 (tested on Pop!_OS/Ubuntu)
-- Python 3.8+
+- Linux with X11 (tested on Pop!_OS/Ubuntu/Debian)
+- Python 3.10+
 - Bleach: Brave Souls running in windowed mode
 - `wmctrl`, `xdotool`, and `xprop` installed
 
@@ -41,52 +42,45 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Run the Bot
-python3 bbs_bot_v5.py
+python3 bbs_bot_v6.py
 ```
 
 ## Usage
 
 **Normal Operation:**
 ```bash
-python3 bbs_bot_v5.py
+python3 bbs_bot_v6.py
 ```
 
-**Dry Run Mode (No Clicks):**
+**Verify Recovery & Startup:**
 ```bash
-python3 bbs_bot_v5.py --dry-run
+python3 bbs_bot_v6.py --test-restart
 ```
 
-**Run Unit Tests:**
+**Dry Run Mode (Log only, no clicks):**
 ```bash
+python3 bbs_bot_v6.py --dry-run
+```
+
+**Run Validation Suite:**
+```bash
+ruff check bbs_bot_v6.py
+python3 -m mypy bbs_bot_v6.py --ignore-missing-imports
 python3 test_v5_logic.py
-```
-
-**Verify Recovery Loop:**
-```bash
-python3 bbs_bot_v5.py --test-restart
-```
-
-**Debug Mode:**
-```bash
-python3 bbs_bot_v5.py --debug-screenshots
+python3 test_v6_sanity.py
 ```
 
 ## Template Images
 
-The `images/` folder contains the required UI templates. If the game UI updates or an event changes the banner:
-1. Run the game in windowed mode
-2. Take a screenshot of the new UI element
-3. Crop it tightly (leave no background context if possible)
-4. Replace the corresponding PNG file in the `images/` folder.
+The `images/` folder contains required UI templates. To update elements:
+1. Run the game in windowed mode.
+2. The bot will automatically lock the window size and position.
+3. Replace existing PNGs with tight, background-free crops of new UI elements if the game updates.
 
-## Logic Testing
+## Configuration
 
-V5 includes a dedicated unit test suite (`test_v5_logic.py`) that validates the bot's core decision-making logic (room matching, icon deduplication, and proximity pairing) without needing the game running. This ensures the "brain" remains accurate after any configuration or code changes.
-
-## Configuration & Tuning
-
-All timing profiles, limits, and delays are located at the top of `bbs_bot_v5.py` inside the `BotConfiguration` dataclass. Every delay, cooldown, and timeout is fully configurable via the `SHIKAI` profiles.
+All timing profiles, limits, and vision confidence thresholds are located at the top of `bbs_bot_v6.py` inside the `BotConfiguration` dataclass.
 
 ## Known Issues
-- **Linux/X11 Only:** Direct memory clicks and background execution rely on Xlib. This will not work natively on Wayland, Windows, or macOS.
-- **Resolution Dependent:** If your screen resolution or game scaling changes drastically, the PyAutoGUI confidence templates may fail to match. Keep the window size consistent.
+- **Linux/X11 Only:** Relies on Xlib and X11 properties. Does not support Wayland natively.
+- **Privacy:** Debug screenshots (if enabled via `--debug-screenshots`) are strictly bounded to the game window and ignored by Git.

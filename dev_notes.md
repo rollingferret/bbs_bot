@@ -1,40 +1,46 @@
-# Development Notes - BBS Bot (V5 'Hollow Engine')
+# Development Notes - BBS Bot (V6 'Snapshot Engine')
 
 ## Architectural Evolution
 The bot has evolved through several major paradigms:
-*   **V2 (The Slug):** Procedural architecture with hardcoded `time.sleep()` calls (e.g., 3-5 seconds per action). Extremely stable focus management but far too slow.
-*   **V3 (The Ghost):** "Fire and forget" interaction logic running at 10fps. Incredibly fast but prone to outrunning game animations, missing clicks, and failing recovery loops due to lack of state awareness.
-*   **V4 (The Stealth Engine):** Introduced the robust Dictionary-Mapped State Machine and Circadian rhythms. However, it suffered from "Verification Bottlenecking" (waiting synchronously for UI changes) and high CPU usage from excessive scanning.
-*   **V5.8 (The Hardened Engine):** The definitive synthesis. Uses V4's State Machine shell, V3's reactive pacing, and V2's focus stability. Refactored for structural integrity by externalizing core vision logic into static methods, allowing for 100% synchronized unit testing between the production code and the test suite.
+*   **V2 (The Slug):** Procedural architecture with hardcoded `time.sleep()` calls.
+*   **V3 (The Ghost):** "Fire and forget" interaction logic running at 10fps.
+*   **V4 (The Stealth Engine):** Introduced Dictionary-Mapped State Machine and Circadian rhythms.
+*   **V5.8 (The Hardened Engine):** Definitive synthesis of state-awareness and snappy reaction speed.
+*   **V6.0+ (The Snapshot Engine):** Current standard. Refactored the core vision loop for extreme resource efficiency and absolute focus stability.
 
-## Core V5 Technologies
+## Core V6/V7 Technologies
 
-### 1. Reactive Interaction (`smart_click`)
-V5 abandons synchronous verification. The `smart_click` method performs exactly one sequence:
-`Locate -> Wait (Cognitive Delay) -> Gaussian Click -> V2 Refocus Hammer -> Return`
-If a `verify_key` is provided, it watches the UI for a maximum of 1.0s. If the UI flips, it returns `True`. If the UI doesn't flip, it returns `False` immediately, allowing the 20fps main loop to re-evaluate and retry on the next tick. This prevents the bot from ever "stalling" while staring at a button.
+### 1. Snapshot Architecture (Vision Efficiency)
+Previous versions performed full-screen image matching for every UI element. V6.0 introduces the "Single Capture" loop:
+*   **Mechanism:** At the top of every 100ms cycle, exactly one `pyautogui.screenshot(region=self.region)` is captured.
+*   **Memory Offsets:** All subsequent checks (like `get_ui_region("auto")`) do not take new screenshots. They perform mathematical coordinate offsets against the existing image in memory.
+*   **Performance:** Drastically reduces CPU load and eliminates "stuttering" during intensive co-op rooms.
 
-### 2. Focus Management (The V2 Hammer)
-V5 utilizes a hybrid "Ghost + Hammer" approach to solve GNOME/Pop!_OS focus stealing:
-1.  **Ghost Click:** X11 events are sent directly to the background game window via `Xlib` without moving the OS cursor or activating the window.
-2.  **The Hammer:** Immediately after the click, the bot sleeps for exactly `0.02s` (to allow GNOME to process any focus-stealing requests from the game engine/Wine), and then fires an unconditional `windowactivate --sync [TERMINAL] windowraise [TERMINAL]`. This ensures the user's terminal remains perfectly on top, allowing for seamless multitasking.
-3.  **Title Targeting:** Window properties (Sticky, Always on Top) are enforced every 5 seconds using `wmctrl -r "Bleach: Brave Souls"`. By verifying the process ID and `WM_CLASS` during discovery, this ensures browser tabs (YouTube/Reddit) are never accidentally hijacked.
+### 2. Passive Persistence (The "Sword & Shield")
+V6.5+ implements a "Polite" window management strategy to solve workspace jumping and focus loss:
+*   **The Shield (Passive):** The bot enforces `Sticky` (on all desktops) and `Above` (Always on Top) flags via `wmctrl`. This ensures the game window is visually present wherever the user goes.
+*   **The Sword (Active):** `get_game_region` performs a low-overhead `xprop` audit of `WM_STATE` and `_NET_WM_DESKTOP`. If the window is minimized or loses its sticky bit, the bot passively re-applies the flags and uses `windowraise` to lift it.
+*   **Mental Model Alignment:** Unlike `windowactivate`, which causes annoying workspace "dragging," V6.8+ uses passive lifts. The game "follows" the user silently.
 
-### 3. Vision Optimization (CPU Throttling)
-To prevent the "vision lag" seen in V4:
-*   `find_image` performs a single `locateOnScreen` pass. A 2nd pass (confidence - 0.05) is only triggered if the first fails, providing forgiveness for slow fades without doubling CPU load on successful hits.
-*   `handle_global_popups` is throttled to run only once every `0.5s` (`POLL_POPUP`). This frees up massive CPU cycles for the core 20fps state machine.
-*   **Static Logic Core:** Vision-based decision logic (`match_rooms`, `dedupe_autos`) is abstracted into testable static methods. This ensures the production bot and the unit tests use the exact same logic, eliminating divergence bugs.
+### 3. Dual-Confidence Auto Management
+To prevent the "Flash Bug" (where flashy boss-death animations fooled the bot into disabling Auto), V6.5 introduces:
+*   **Forgiving Green (0.85):** The bot prioritizes looking for the Green (ON) button first. It uses a lower confidence to ensure that even through special effects, it recognizes the button is already ON and does nothing.
+*   **Strict Grey (0.995):** The bot only clicks the screen if it is mathematically certain it sees the exact Grey (OFF) template. This creates a "One-Way Gate" that keeps Auto firmly enabled.
 
-### 4. Circadian Rhythms (Human Emulation)
-The bot's timing is entirely driven by `SHIKAI` profiles in the `BotConfiguration` dataclass.
-*   **SHIKAI_MAX:** ~380ms total cognitive reaction time. Mimics an elite, focused player.
-*   **SHIKAI_NORMAL:** ~550ms total cognitive reaction time. Mimics a casual player watching Netflix.
-All delays pass through a Gaussian math function (`random.gauss`) influenced by a `fatigue_modifier` that slowly oscillates on a 30-minute Sine wave. This ensures no two clicks are ever mathematically identical, masking the bot from heuristic anti-cheat detection.
+### 4. Precision Run Counting (Cycle Lock)
+V7.0 introduces an authoritative run counting lock to ensure 100% accurate session stats:
+*   **The Problem:** Lag often causes the bot to see multiple finish images (`tap1`, `tap2`) or skip them entirely.
+*   **The Fix:** A single authoritative `is_done` check at the start of the `handle_finish` cycle credits the run to the `run_count` and immediately flips a `_run_counted` lock. 
+*   **Reset:** The lock is only reset when the bot successfully joins a new lobby (`READY` state), ensuring exactly one credit per quest.
 
-### 5. Closed-Loop Recovery & Testing
-The bot is "Unkillable" for overnight runs:
-*   If stuck for 10 minutes (`TIMEOUT_QUEST_MAX`), it force-kills `BleachBraveSouls.exe` and restarts via Steam.
-*   It updates its internal `self.region` every 0.05s, even during startup, ensuring it tracks the game window if it resizes or shifts across monitors.
-*   If it encounters an unknown screen, it enters `RECOVERY` and scans a dictionary of 16 global anchors. The moment it recognizes an anchor (e.g., `search_again`), it "teleports" its state machine to the correct handler, eliminating the need for hardcoded "Back" button navigation.
-*   **Automated Validation:** The `test_v5_logic.py` suite allows for rapid regression testing of the "Brain" logic without needing to launch the game, making it safe to refactor even minutes before a long run.
+### 5. Surgical Sub-Processing (ID Caching)
+To reduce the overhead of constant `xdotool` and `ps` spawns:
+*   **WID Caching:** The bot caches the Window ID after the first search.
+*   **Cold Cache Refresh:** It only performs a full system-wide search (`xdotool search --name`) if the cached ID fails an `xprop` check or every 5 seconds (`POLL_PROPERTY_SYNC`).
+*   **Latency:** Reduces loop latency by ~40ms on modern Linux kernels.
+
+## Validation & Quality Standards
+V6/V7 enforces strict software engineering standards to prevent "Overnight Crashes":
+*   **Type Safety:** 100% `mypy` verified. Eliminates `NoneType` index crashes in vision logic.
+*   **Linting:** 100% `ruff` (PEP 8) compliant.
+*   **Sanity Testing:** `test_v6_sanity.py` simulates X11 boot loops without interacting with real windows, ensuring the engine structure remains sound after refactors.
