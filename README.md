@@ -1,86 +1,58 @@
-# Bleach: Brave Souls Auto Co-op Bot (V6.0 'Snapshot Engine')
+# BBS Quest Bot - V7.2 (Field Build)
 
-An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming. V6.0 introduces a high-efficiency vision architecture, robust workspace persistence, and surgical interaction logic.
+Technical interaction script for automated quest loops in Bleach: Brave Souls.
 
-## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
+## System Description
+Script-based autonomous agent utilizing a state-machine architecture. Focus is on resource efficiency and workspace persistence during long-duration runs.
 
-**NO SUPPORT PROVIDED**: This project is released as-is with no warranty, support, or maintenance. The author accepts no responsibility for:
-- Account bans or penalties from game publishers
-- Terms of Service violations 
-- System damage or data loss
-- Any other consequences of using this software
+## Operational Theory (The "How")
 
-**LEGAL WARNING**: Game automation may violate Terms of Service and could result in permanent account bans. Use entirely at your own risk.
+### 1. Vision Cycle (Snapshot Engine)
+*   **Method:** Performs a single `pyautogui.screenshot(region=self.region)` at the start of each 100ms loop.
+*   **Reason:** Eliminates CPU spikes caused by multiple full-screen scans. All UI checks (Auto, Rewards, Retry) use mathematical pixel-offsets from this single memory buffer.
 
-## 🌟 V6.0 Key Features
+### 2. Focus & Persistence (Sword & Shield)
+*   **Shield (Passive):** Uses `wmctrl` to force `sticky` and `above` flags. The window follows the user across all workspaces silently.
+*   **Sword (Active):** Monitors `WM_STATE` and `_NET_WM_DESKTOP`. If the window is minimized or loses stickiness, the bot re-applies the flags. 
+*   **Politeness:** Replaced `windowactivate` with `windowraise` to prevent the Window Manager from stealing the user's workspace.
 
-*   **High-Efficiency Snapshot Engine:** Captures exactly one game-region screenshot per loop. All surgical checks (Auto, Rewards, Retries) are performed as mathematical offsets in memory, reducing CPU overhead and increasing reaction speed.
-*   **Passive Persistence (Workspace Glued):** Automatically forces the game window to be `Sticky` (exists on all desktops) and `Above` (Always on Top). The window follows you silently across workspaces without ever dragging your focus away.
-*   **Surgical Auto-Management:** Uses a dual-confidence model (Forgiving Green / Strict Grey) to ensure the Auto button stays ON. It ignores boss-death explosions and flashy special effects that "trick" traditional bots.
-*   **Precision Run Counting:** Implements a completion lock that credits exactly one run the moment rewards appear. Verified accurate even during heavy server lag or recovery jumps.
-*   **Pure X11 Ghost Clicks:** Uses headless X11 events to click the background game window. Includes an unconditional refocus hammer so you can continue working while the bot plays.
-*   **Circadian Rhythm Profiles:** Mimics human focus patterns by shifting between `SHIKAI_MAX` (Focused) and `SHIKAI_NORMAL` (Casual) profiles with Gaussian randomized delays.
-*   **Enterprise-Grade Stability:** 100% PEP 8 compliant and Type-Safe (verified via `ruff` and `mypy`). Robust recovery maps and action watchdogs ensure 16+ hours of uninterrupted autonomous play.
+### 3. Auto-Management (Dual Gate)
+*   **Logic:** Prioritizes the Green (ON) state check at 0.85 confidence. If Green is detected, the check exits. 
+*   **Security:** Only attempts a click if the Grey (OFF) state is confirmed at 0.995 confidence. This prevents "Flash Bugs" from boss animations disabling Auto.
 
-## Requirements
+### 4. Run Counting (Cycle Lock)
+*   **Mechanism:** Uses a `_run_counted` boolean lock.
+*   **Validation:** Triggered by the first detection of any finish anchor (`tap1`, `tap2`, or `retry`). Lock clears only upon successful lobby entry (`READY`).
 
-- Linux with X11 (tested on Pop!_OS/Ubuntu/Debian)
+## System Requirements
+- Linux / X11 (Pop!_OS, Ubuntu, Debian)
 - Python 3.10+
-- Bleach: Brave Souls running in windowed mode
-- `wmctrl`, `xdotool`, and `xprop` installed
+- `wmctrl`, `xdotool`, `xprop`
 
-## Setup
+## Installation & Calibration
 
 ```bash
-sudo apt install python3 python3-pip python3-venv xdotool wmctrl x11-utils
-git clone https://github.com/rollingferret/bbs_bot.git
-cd bbs_bot
+# Dependencies
+sudo apt install python3-pip python3-venv xdotool wmctrl x11-utils
 
-# Create virtual environment
+# Environment
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
 
-# Run the Bot
+# Execution
 python3 bbs_bot_v6.py
 ```
 
-## Usage
+## Maintenance & Testing
+Run these commands to verify system integrity before long sessions:
+*   `ruff check bbs_bot_v6.py`: Style/PEP8 validation.
+*   `python3 -m mypy bbs_bot_v6.py --ignore-missing-imports`: Type-safety audit.
+*   `python3 test_v5_logic.py`: Brain/Matching unit tests.
+*   `python3 test_v6_sanity.py`: X11 loop boot-check.
 
-**Normal Operation:**
-```bash
-python3 bbs_bot_v6.py
-```
-
-**Verify Recovery & Startup:**
-```bash
-python3 bbs_bot_v6.py --test-restart
-```
-
-**Dry Run Mode (Log only, no clicks):**
-```bash
-python3 bbs_bot_v6.py --dry-run
-```
-
-**Run Validation Suite:**
-```bash
-ruff check bbs_bot_v6.py
-python3 -m mypy bbs_bot_v6.py --ignore-missing-imports
-python3 test_v5_logic.py
-python3 test_v6_sanity.py
-```
-
-## Template Images
-
-The `images/` folder contains required UI templates. To update elements:
-1. Run the game in windowed mode.
-2. The bot will automatically lock the window size and position.
-3. Replace existing PNGs with tight, background-free crops of new UI elements if the game updates.
-
-## Configuration
-
-All timing profiles, limits, and vision confidence thresholds are located at the top of `bbs_bot_v6.py` inside the `BotConfiguration` dataclass.
-
-## Known Issues
-- **Linux/X11 Only:** Relies on Xlib and X11 properties. Does not support Wayland natively.
-- **Privacy:** Debug screenshots (if enabled via `--debug-screenshots`) are strictly bounded to the game window and ignored by Git.
+## File Manifest
+*   `bbs_bot_v6.py`: Main control logic and state machine.
+*   `images/`: UI template library.
+*   `screenshots/`: Local debug output (excluded from git).
+*   `dev_notes.md`: Architectural evolution and low-level technical log.
