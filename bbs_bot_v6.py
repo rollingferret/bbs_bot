@@ -86,7 +86,7 @@ class BotConfiguration:
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
 
     # --- Operational Safety ---
-    WINDOW_NOT_FOUND_RETRIES: int = 60
+    WINDOW_NOT_FOUND_RETRIES: int = 60 # 6 seconds at 0.1s loop
     MAX_DISCONNECT_RETRIES: Tuple[int, int] = (8, 16)
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
@@ -96,6 +96,7 @@ class BotConfiguration:
     POLL_RECOVERY: float = 0.5
     POLL_RUNNING: float = 0.5
     POLL_PROPERTY_SYNC: float = 5.0
+
     CASUAL_LINGER_RUNS: Tuple[int, int] = (8, 16)
 
     # --- Behavioral Stealth ---
@@ -1273,6 +1274,15 @@ class BBSBot:
             self.recover_game()
         while True:
             self.ensure_window_ready()
+            
+            # Periodic Property Sync (Shield) - throttled to POLL_PROPERTY_SYNC
+            now = time.time()
+            if not hasattr(self, '_last_property_sync'):
+                self._last_property_sync = 0.0
+            if now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC:
+                self.setup_window_properties()
+                self._last_property_sync = now
+            
             if self.region:
                 try:
                     self.snapshot = pyautogui.screenshot(region=self.region)
