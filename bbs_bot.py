@@ -13,7 +13,8 @@ from Xlib import X, display, protocol
 _RAW_TITLE = "Bleach: Brave Souls"
 # Only allow alphanumeric, spaces, colons, and common punctuation
 import re
-if not re.match(r'^[a-zA-Z0-9\s:.-]+$', _RAW_TITLE):
+
+if not re.match(r"^[a-zA-Z0-9\s:.-]+$", _RAW_TITLE):
     raise ValueError(f"Invalid game window title: {_RAW_TITLE}")
 GAME_WINDOW_TITLE = _RAW_TITLE
 
@@ -26,9 +27,7 @@ ROOM_JOIN_CHECK_DELAY = (
 )
 
 # === QUEST EXECUTION TIMEOUTS ===
-CHECK_RUN_START_TIMEOUT = (
-    300  # Max time to wait for quest to start (looking for auto button) - balanced timeout
-)
+CHECK_RUN_START_TIMEOUT = 300  # Max time to wait for quest to start (looking for auto button) - balanced timeout
 QUEST_MAX_TIME = 300  # Max time to wait for quest completion (5 minutes)
 
 # === ROOM MATCHING CONFIG ===
@@ -48,8 +47,8 @@ RETRY_PAUSE_DELAY = 3  # Pause after clicking retry button for game to load
 ROOM_LIST_POLL_INTERVAL = 0.5  # How often to check if room list loaded
 READY_POLL_INTERVAL = 0.5  # How often to poll for ready button
 READY_BUTTON_TIMEOUT = 15  # Max time to wait for ready button to appear
-TAP1_BUTTON_TIMEOUT = 15      # Max time to wait for first tap button
-TAP2_BUTTON_TIMEOUT = 20      # Max time to wait for second tap button
+TAP1_BUTTON_TIMEOUT = 15  # Max time to wait for first tap button
+TAP2_BUTTON_TIMEOUT = 20  # Max time to wait for second tap button
 DISCONNECT_RECOVERY_DELAY = 2.0  # Wait after disconnect popup before restart
 RETIREMENT_STEP_DELAY = 1.0  # Wait between retirement confirmation steps
 RUN_START_POLL_INTERVAL = 2.0  # How often to check if quest started
@@ -82,7 +81,9 @@ TEMPLATE_CONFIDENCE_LOOSE = 0.7  # For harder-to-match elements
 
 # === CENTER CLICKING ===
 CENTER_CLICK_OFFSET_FACTOR = 6  # Offset divisor for center-focused clicking
-AUTO_BUTTON_OFFSET_FACTOR = 10  # Tighter offset for auto button (smaller clickable area)
+AUTO_BUTTON_OFFSET_FACTOR = (
+    10  # Tighter offset for auto button (smaller clickable area)
+)
 
 # === AUTO ICON DETECTION ===
 AUTO_ICON_MIN_DISTANCE = 60  # Min pixels between auto icons for dedup
@@ -91,10 +92,9 @@ ROOM_MATCHING_WEIGHT_FACTOR = 0.1  # Horizontal weight in room proximity algorit
 TEMPLATES = {
     # Game startup navigation
     "game_start": "images/game_start.png",
-    "close_news": "images/close_news.png", 
+    "close_news": "images/close_news.png",
     "coop_1": "images/coop-1.png",
     "coop_2": "images/coop-2.png",
-    
     # Normal bot operation
     "coop_quest": "images/coop_quest.png",
     "open_coop_quest": "images/open_coop_quest.png",
@@ -116,20 +116,25 @@ TEMPLATES = {
 
 os.makedirs("screenshots", exist_ok=True)
 
+
 def get_game_region():
     try:
         # Find all windows with the game title
-        wids = subprocess.check_output(
-            [
-                "xdotool",
-                "search",
-                "--onlyvisible",
-                "--name",
-                f"^{GAME_WINDOW_TITLE}$",
-            ],
-            text=True,
-        ).strip().split()
-        
+        wids = (
+            subprocess.check_output(
+                [
+                    "xdotool",
+                    "search",
+                    "--onlyvisible",
+                    "--name",
+                    f"^{GAME_WINDOW_TITLE}$",
+                ],
+                text=True,
+            )
+            .strip()
+            .split()
+        )
+
         # Check each window to find the actual game process
         for wid in wids:
             if not wid:
@@ -139,12 +144,12 @@ def get_game_region():
                 pid = subprocess.check_output(
                     ["xdotool", "getwindowpid", wid], text=True
                 ).strip()
-                
+
                 # Check if this process is actually the game
                 cmdline = subprocess.check_output(
                     ["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True
                 ).strip()
-                
+
                 # Look for game executable in the command line
                 if "BleachBraveSouls.exe" in cmdline or "BLEACH Brave Souls" in cmdline:
                     # This is the real game window
@@ -152,7 +157,10 @@ def get_game_region():
                         ["xdotool", "getwindowgeometry", "--shell", wid], text=True
                     ).splitlines()
                     geo = {
-                        k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)
+                        k: int(v)
+                        for k, v in (
+                            line.split("=") for line in geo_lines if "=" in line
+                        )
                     }
                     print(f"[GAME] Found game window ID: {wid} (PID: {pid})")
                     break
@@ -161,7 +169,7 @@ def get_game_region():
         else:
             # No valid game window found
             raise Exception("No valid game process found with matching window title")
-        
+
     except Exception as e:
         print(f"[ERROR] Window lookup failed: {e}")
         print(f"[ERROR] Make sure '{GAME_WINDOW_TITLE}' is running and visible")
@@ -184,13 +192,15 @@ def log_run(run_count, tag, message):
 def restart_game_and_navigate():
     """Restart the game, find the new window, and return its details."""
     print("[RESTART] Game appears stuck - restarting and navigating back...")
-    
+
     # Find and kill the specific game process
     try:
         # Get all processes and find the game
         ps_output = subprocess.check_output(["ps", "aux"], text=True)
-        for line in ps_output.split('\n'):
-            if "BleachBraveSouls.exe" in line or ("proton" in line.lower() and "bleach" in line.lower()):
+        for line in ps_output.split("\n"):
+            if "BleachBraveSouls.exe" in line or (
+                "proton" in line.lower() and "bleach" in line.lower()
+            ):
                 try:
                     # Extract and validate PID (second column)
                     pid = int(line.split()[1])
@@ -204,9 +214,9 @@ def restart_game_and_navigate():
         print(f"[RESTART] Process kill failed, trying pkill: {e}")
         # Fallback to pkill
         subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], check=False)
-    
+
     time.sleep(5)  # Wait for cleanup
-    
+
     # Restart via Steam in a non-blocking way
     print("[RESTART] Starting game via Steam (non-blocking)...")
     subprocess.Popen(
@@ -214,25 +224,26 @@ def restart_game_and_navigate():
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
-    
+
     print("[RESTART] Waiting 30s for game to appear...")
     time.sleep(30)  # Give game plenty of time to fully load
-    
+
     # Verify game actually started
     ps_output = subprocess.check_output(["ps", "aux"], text=True)
-    if not any("BleachBraveSouls.exe" in line for line in ps_output.split('\n')):
+    if not any("BleachBraveSouls.exe" in line for line in ps_output.split("\n")):
         print("[RESTART] Game failed to start - taking screenshot and exiting")
-        pyautogui.screenshot().save(f"screenshots/restart_failed_{int(time.time())}.png")
+        pyautogui.screenshot().save(
+            f"screenshots/restart_failed_{int(time.time())}.png"
+        )
         sys.exit(1)
-        
+
     # Re-discover the new window and return all necessary state
     print("[RESTART] Re-discovering game window...")
     new_region, new_win_id = get_game_region()
     print(f"[RESTART] New window ID: {new_win_id}, region: {new_region}")
-    
+
     # Return all the state needed by the main loop
     return new_region, new_win_id, "GAME_STARTUP"
-
 
 
 def screenshot_and_exit(region, tag, run_count=None):
@@ -249,7 +260,7 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
     Returns recovered state if found, otherwise calls screenshot_and_exit.
     """
     print(f"[RECOVERY] Attempting to identify current screen state...")
-    
+
     # Template → State mapping for recovery
     state_detection = [
         # Game startup screens
@@ -257,42 +268,40 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
         ("close_news", "GAME_STARTUP", "Game startup - news popup visible"),
         ("coop_1", "GAME_STARTUP", "Game startup - first coop navigation visible"),
         ("coop_2", "GAME_STARTUP", "Game startup - second coop navigation visible"),
-        
-        # Main menu screens 
+        # Main menu screens
         ("coop_quest", "MENU", "Main menu - coop quest button visible"),
         ("open_coop_quest", "MENU", "Quest selection - specific quest visible"),
-        
-        # Room list screens  
-        ("enter_room_button", "ENTER_ROOM_LIST", "Join screen - need to enter room list"),
-        ("auto", "SCAN_ROOMS", "Room list - AUTO icons visible"), 
+        # Room list screens
+        (
+            "enter_room_button",
+            "ENTER_ROOM_LIST",
+            "Join screen - need to enter room list",
+        ),
+        ("auto", "SCAN_ROOMS", "Room list - AUTO icons visible"),
         ("search_again", "SCAN_ROOMS", "Room list - search again visible"),
-        
         # Lobby screens
         ("ready", "READY", "Room lobby - ready button visible"),
-        
         # In-game screens
         ("ingame_auto_off", "CHECK_RUN_START", "Game starting - auto button OFF"),
         ("ingame_auto_on", "RUNNING", "Game running - auto already ON"),
-        
         # Quest completion screens
         ("tap1", "FINISH", "Quest complete - first tap button"),
-        ("tap2", "FINISH", "Quest complete - second tap button"), 
+        ("tap2", "FINISH", "Quest complete - second tap button"),
         ("retry", "FINISH", "Quest complete - retry button"),
-        
         # Error/popup screens - restart from menu for safety
         ("close", "MENU", "Error popup detected - restarting from menu"),
         ("retire", "MENU", "Stuck in lobby - restarting from menu"),
         ("okay", "MENU", "Confirmation dialog - restarting from menu"),
     ]
-    
+
     detected_states = []
-    
+
     for template_key, target_state, description in state_detection:
         try:
             box = pyautogui.locateOnScreen(
-                TEMPLATES[template_key], 
+                TEMPLATES[template_key],
                 region=region,
-                confidence=TEMPLATE_CONFIDENCE_NORMAL
+                confidence=TEMPLATE_CONFIDENCE_NORMAL,
             )
             if box:
                 detected_states.append((target_state, description, template_key))
@@ -300,7 +309,7 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
         except Exception as e:
             print(f"[RECOVERY] Warning - error scanning {template_key}: {e}")
             # Continue to next template
-    
+
     # Recovery decision logic
     if not detected_states:
         print("[RECOVERY] No known templates detected - NEW EDGE CASE")
@@ -312,25 +321,35 @@ def try_state_recovery_or_exit(region, tag, run_count=None):
         print(f"[RECOVERY] Screenshot saved: {path}")
         # Signal that a restart is needed
         return "RESTART_GAME"
-        
+
     elif len(detected_states) == 1:
         state, desc, template = detected_states[0]
         print(f"[RECOVERY] ✅ Clear state identified: {desc}")
         return state
-        
+
     else:
         # Multiple templates detected - use priority logic
-        print(f"[RECOVERY] Multiple templates detected ({len(detected_states)}) - using priority logic")
-        
+        print(
+            f"[RECOVERY] Multiple templates detected ({len(detected_states)}) - using priority logic"
+        )
+
         # Priority order: in-game states > lobby states > menu states
-        priority_order = ["RUNNING", "CHECK_RUN_START", "FINISH", "READY", "SCAN_ROOMS", "ENTER_ROOM_LIST", "MENU"]
-        
+        priority_order = [
+            "RUNNING",
+            "CHECK_RUN_START",
+            "FINISH",
+            "READY",
+            "SCAN_ROOMS",
+            "ENTER_ROOM_LIST",
+            "MENU",
+        ]
+
         for priority_state in priority_order:
             for state, desc, template in detected_states:
                 if state == priority_state:
                     print(f"[RECOVERY] ✅ Priority state selected: {desc}")
                     return state
-                    
+
         # Fallback (shouldn't reach here)
         state = detected_states[0][0]
         print(f"[RECOVERY] ⚠️ Fallback state: {state}")
@@ -601,7 +620,10 @@ def match_autos_with_rules(autos, rules, run_count):
             rule_x, rule_y = rule.left + rule.width // 2, rule.top + rule.height // 2
 
             if rule_y > auto_y:  # Rule must be below AUTO icon
-                distance = abs(rule_y - auto_y) + abs(rule_x - auto_x) * ROOM_MATCHING_WEIGHT_FACTOR
+                distance = (
+                    abs(rule_y - auto_y)
+                    + abs(rule_x - auto_x) * ROOM_MATCHING_WEIGHT_FACTOR
+                )
                 log_run(
                     run_count,
                     "MATCH",
@@ -671,7 +693,7 @@ def deduplicate_auto_icons(matches, min_distance=AUTO_ICON_MIN_DISTANCE):
 if __name__ == "__main__":
     # Test restart functionality - check before trying to find game window
     TEST_RESTART = len(sys.argv) > 1 and sys.argv[1] == "--test-restart"
-    
+
     if TEST_RESTART:
         print("[TEST] Testing game restart functionality...")
         # Perform the restart and get the new window details and state
@@ -706,38 +728,54 @@ if __name__ == "__main__":
             print("[STARTUP] Navigating from game startup to co-op quest screen...")
             print("[STARTUP] Waiting 12s for game to fully initialize after restart...")
             time.sleep(12)
-            
+
             # Step 1: Click game start button
             print("[STARTUP] Step 1: Clicking game start button")
-            success = poll_and_click("game_start", region, timeout=GAME_START_BUTTON_TIMEOUT, description="game start button", center_click=True)
+            success = poll_and_click(
+                "game_start",
+                region,
+                timeout=GAME_START_BUTTON_TIMEOUT,
+                description="game start button",
+                center_click=True,
+            )
             if not success:
                 print("[STARTUP] [ERROR] Failed to find/click game start button!")
                 screenshot_and_exit(region, "startup_game_start_failed", run_count)
-            
+
             print("[STARTUP] Waiting 8s for game to load...")
             time.sleep(8)
-            
+
             # Step 2: Close news popup
             print("[STARTUP] Step 2: Closing news popup")
-            poll_and_click("close_news", region, timeout=30, description="close news popup")
+            poll_and_click(
+                "close_news", region, timeout=30, description="close news popup"
+            )
             print("[STARTUP] Waiting 7s for screen to load...")
             time.sleep(7)
-            
+
             # Step 3: Navigate to co-op (first button)
             print("[STARTUP] Step 3: Navigating to co-op (first button)")
-            poll_and_click("coop_1", region, timeout=30, description="first coop navigation")
-            print("[STARTUP] Waiting 5s for coop screen to fully load and become clickable...")
+            poll_and_click(
+                "coop_1", region, timeout=30, description="first coop navigation"
+            )
+            print(
+                "[STARTUP] Waiting 5s for coop screen to fully load and become clickable..."
+            )
             time.sleep(5)
-            
+
             # Step 4: Navigate to co-op (second button)
             print("[STARTUP] Step 4: Navigating to co-op (second button)")
-            poll_and_click("coop_2", region, timeout=30, description="second coop navigation")
+            poll_and_click(
+                "coop_2", region, timeout=30, description="second coop navigation"
+            )
             print("[STARTUP] Waiting 3s for screen to load...")
             time.sleep(3)
-            
-            print("[STARTUP] Navigation complete - transitioning to normal bot operation")
+
+            print(
+                "[STARTUP] Navigation complete - transitioning to normal bot operation"
+            )
             state = "MENU"
-            
+
         elif state == "MENU":
             log_run(run_count, "STATE", f"MENU - Starting run #{run_count + 1}")
             # Step 1: click main Co-op Quest banner
@@ -804,10 +842,14 @@ if __name__ == "__main__":
                 time.sleep(ROOM_LIST_POLL_INTERVAL)
             else:
                 log_run(
-                    run_count, "TIMEOUT", "Room list didn't load - checking actual screen state"
+                    run_count,
+                    "TIMEOUT",
+                    "Room list didn't load - checking actual screen state",
                 )
                 # Use state recovery to determine where we actually are
-                state = try_state_recovery_or_exit(region, "room_list_load_timeout", run_count)
+                state = try_state_recovery_or_exit(
+                    region, "room_list_load_timeout", run_count
+                )
                 continue
 
             # Additional delay to ensure room list is fully interactive
@@ -1054,8 +1096,12 @@ if __name__ == "__main__":
             if state == "READY":  # Still in READY state, ready button was clicked
                 if not ready_clicked:
                     # Timeout - attempt recovery
-                    print(f"[TIMEOUT] ready button not found after {READY_BUTTON_TIMEOUT}s - attempting recovery")
-                    state = try_state_recovery_or_exit(region, "timeout_ready", run_count)
+                    print(
+                        f"[TIMEOUT] ready button not found after {READY_BUTTON_TIMEOUT}s - attempting recovery"
+                    )
+                    state = try_state_recovery_or_exit(
+                        region, "timeout_ready", run_count
+                    )
                     continue
 
                 # Ready to start the quest, now check if it actually started
@@ -1087,7 +1133,7 @@ if __name__ == "__main__":
                         )
                         # Wait for game to fully load OUTSIDE interference window
                         time.sleep(INGAME_AUTO_READY_DELAY)
-                        # Template delay OUTSIDE interference window  
+                        # Template delay OUTSIDE interference window
                         time.sleep(TEMPLATE_FOUND_DELAY)
                         # Click near center of auto button (avoid edges for circular buttons)
                         center_x = auto_off_box.left + auto_off_box.width // 2
@@ -1286,7 +1332,9 @@ if __name__ == "__main__":
                         print(
                             f"[RUN {run_count + 1}] [ERROR] No retire button found - game likely stuck on loading screen"
                         )
-                        print(f"[RUN {run_count + 1}] [RESTART] Restarting game to recover from loading screen hang")
+                        print(
+                            f"[RUN {run_count + 1}] [RESTART] Restarting game to recover from loading screen hang"
+                        )
                         state = "RESTART_GAME"
                         break
                 except (
@@ -1297,7 +1345,9 @@ if __name__ == "__main__":
                     print(
                         f"[RUN {run_count + 1}] [ERROR] Retire button not found - attempting recovery"
                     )
-                    state = try_state_recovery_or_exit(region, "run_start_failed", run_count)
+                    state = try_state_recovery_or_exit(
+                        region, "run_start_failed", run_count
+                    )
                     break
 
         elif state == "RUNNING":
@@ -1369,8 +1419,10 @@ if __name__ == "__main__":
                 print(f"[RUN {run_count + 1}] [QUEST] Running... {elapsed:.0f}s")
                 time.sleep(QUEST_POLL_INTERVAL)
             else:
-                # Quest timeout - attempt recovery 
-                print(f"[RUN {run_count + 1}] [ERROR] Quest timeout after 5 minutes - attempting recovery")
+                # Quest timeout - attempt recovery
+                print(
+                    f"[RUN {run_count + 1}] [ERROR] Quest timeout after 5 minutes - attempting recovery"
+                )
                 state = try_state_recovery_or_exit(region, "quest_timeout", run_count)
                 continue
 
@@ -1378,17 +1430,17 @@ if __name__ == "__main__":
             log_run(run_count, "STATE", "FINISH")
             # Quest completion sequence: tap1 → tap2 → retry
             # Check which screen we're currently on to handle recovery scenarios
-            
+
             # First, detect current screen state
             tap1_found = False
             tap2_found = False
             retry_found = False
-            
+
             # Initialize variables to prevent scope issues
             tap1_box = None
             tap2_box = None
             retry_box = None
-            
+
             try:
                 tap1_box = pyautogui.locateOnScreen(
                     TEMPLATES["tap1"],
@@ -1397,9 +1449,13 @@ if __name__ == "__main__":
                 )
                 if tap1_box:
                     tap1_found = True
-            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+            except (
+                pyscreeze.ImageNotFoundException,
+                OSError,
+                pyautogui.ImageNotFoundException,
+            ):
                 pass
-            
+
             try:
                 tap2_box = pyautogui.locateOnScreen(
                     TEMPLATES["tap2"],
@@ -1408,9 +1464,13 @@ if __name__ == "__main__":
                 )
                 if tap2_box:
                     tap2_found = True
-            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+            except (
+                pyscreeze.ImageNotFoundException,
+                OSError,
+                pyautogui.ImageNotFoundException,
+            ):
                 pass
-                
+
             try:
                 retry_box = pyautogui.locateOnScreen(
                     TEMPLATES["retry"],
@@ -1419,12 +1479,20 @@ if __name__ == "__main__":
                 )
                 if retry_box:
                     retry_found = True
-            except (pyscreeze.ImageNotFoundException, OSError, pyautogui.ImageNotFoundException):
+            except (
+                pyscreeze.ImageNotFoundException,
+                OSError,
+                pyautogui.ImageNotFoundException,
+            ):
                 pass
-            
+
             # Handle based on what we found
             if retry_found:
-                log_run(run_count, "RECOVERY", "Found retry button - skipping directly to retry")
+                log_run(
+                    run_count,
+                    "RECOVERY",
+                    "Found retry button - skipping directly to retry",
+                )
                 # Skip directly to step 10 (retry clicking)
             elif tap2_found:
                 log_run(run_count, "RECOVERY", "Found tap2 - skipping to second tap")
@@ -1434,8 +1502,10 @@ if __name__ == "__main__":
                 # Normal flow - start with tap1
                 start_time = time.time()
                 tap1_clicked = False
-                
-                while time.time() - start_time < TAP1_BUTTON_TIMEOUT and not tap1_clicked:
+
+                while (
+                    time.time() - start_time < TAP1_BUTTON_TIMEOUT and not tap1_clicked
+                ):
                     try:
                         tap1_box = pyautogui.locateOnScreen(
                             TEMPLATES["tap1"],
@@ -1474,14 +1544,18 @@ if __name__ == "__main__":
                     time.sleep(READY_POLL_INTERVAL)
 
                 if not tap1_clicked:
-                    state = try_state_recovery_or_exit(region, "timeout_tap1", run_count)
+                    state = try_state_recovery_or_exit(
+                        region, "timeout_tap1", run_count
+                    )
                     continue
 
                 log_run(run_count, "WAIT", "Brief pause after first tap...")
                 time.sleep(TAP_PAUSE_DELAY)
             else:
                 # No tap buttons or retry found - go to recovery
-                state = try_state_recovery_or_exit(region, "no_finish_buttons", run_count)
+                state = try_state_recovery_or_exit(
+                    region, "no_finish_buttons", run_count
+                )
                 continue
 
             # Step 9: Handle tap2 (unless we're skipping to retry)
@@ -1490,7 +1564,9 @@ if __name__ == "__main__":
                 # Custom tap2 clicking with center focus
                 start_time = time.time()
                 tap2_clicked = False
-                while time.time() - start_time < TAP2_BUTTON_TIMEOUT and not tap2_clicked:
+                while (
+                    time.time() - start_time < TAP2_BUTTON_TIMEOUT and not tap2_clicked
+                ):
                     try:
                         tap2_box = pyautogui.locateOnScreen(
                             TEMPLATES["tap2"],
@@ -1529,10 +1605,14 @@ if __name__ == "__main__":
                     time.sleep(READY_POLL_INTERVAL)
 
                 if not tap2_clicked:
-                    state = try_state_recovery_or_exit(region, "timeout_tap2", run_count)
+                    state = try_state_recovery_or_exit(
+                        region, "timeout_tap2", run_count
+                    )
                     continue
                 log_run(
-                    run_count, "WAIT", "Waiting for screen transition after second tap..."
+                    run_count,
+                    "WAIT",
+                    "Waiting for screen transition after second tap...",
                 )
                 time.sleep(SCREEN_TRANSITION_DELAY)
 
@@ -1571,7 +1651,7 @@ if __name__ == "__main__":
                 ):
                     pass
                 time.sleep(0.5)
-            
+
             if not retry_clicked:
                 # Use recovery instead of crashing
                 state = try_state_recovery_or_exit(region, "timeout_retry", run_count)
@@ -1581,8 +1661,6 @@ if __name__ == "__main__":
 
             print(f"✅ [RUN {run_count + 1}] Completed run #{run_count + 1}")
             run_count += 1
-            print(
-                f"[RUN {run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST"
-            )
+            print(f"[RUN {run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST")
             time.sleep(FINAL_PAUSE_DELAY)
             state = "ENTER_ROOM_LIST"

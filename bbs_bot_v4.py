@@ -17,40 +17,42 @@ from PIL import Image
 # --- LOGGING SETUP ---
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.FileHandler("v4_behavior.log"),
-        logging.StreamHandler(sys.stdout)
-    ]
+        logging.StreamHandler(sys.stdout),
+    ],
 )
 logger = logging.getLogger(__name__)
+
 
 @dataclass
 class BotConfiguration:
     """Centralized configuration for the BBS Bot V4.0 'Stealth Engine'."""
+
     RAW_TITLE: str = "Bleach: Brave Souls"
     GAME_WINDOW_TITLE: str = "Bleach: Brave Souls"
-    
+
     # --- Circadian Rhythm Profiles ---
     CIRCADIAN_PROFILES: Dict[str, Dict[str, Any]] = None
-    
+
     # Current Active Profile (Defaults initialized in post_init)
-    DELAY_COGNITIVE: Tuple[float, float] = (0.28, 0.08) 
-    DELAY_SNIPE: float = 0.20         
-    DELAY_TRANSITION: float = 0.7     
-    DELAY_SOAK: float = 0.5           # Wait time BEFORE clicking
-    DELAY_POPUP: float = 1.0          
-    DELAY_TAP: float = 4.0            # Wait time AFTER reward tap
-    DELAY_READY: float = 0.20         
-    WAIT_ROOM_LOAD: float = 0.4       
-    WAIT_SEARCH_AGAIN: float = 1.0    
-    WAIT_LOBBY_READY: float = 0.5     
-    WAIT_POST_RETRY: float = 1.5      
-    WAIT_REFOCUS: float = 0.02        # Quiet Hybrid Delay
-    
+    DELAY_COGNITIVE: Tuple[float, float] = (0.28, 0.08)
+    DELAY_SNIPE: float = 0.20
+    DELAY_TRANSITION: float = 0.7
+    DELAY_SOAK: float = 0.5  # Wait time BEFORE clicking
+    DELAY_POPUP: float = 1.0
+    DELAY_TAP: float = 4.0  # Wait time AFTER reward tap
+    DELAY_READY: float = 0.20
+    WAIT_ROOM_LOAD: float = 0.4
+    WAIT_SEARCH_AGAIN: float = 1.0
+    WAIT_LOBBY_READY: float = 0.5
+    WAIT_POST_RETRY: float = 1.5
+    WAIT_REFOCUS: float = 0.02  # Quiet Hybrid Delay
+
     # --- Timeouts ---
-    TIMEOUT_STUCK: float = 300  
-    TIMEOUT_QUEST_MAX: float = 600    # Hard watchdog for entire loop (10 mins)
+    TIMEOUT_STUCK: float = 300
+    TIMEOUT_QUEST_MAX: float = 600  # Hard watchdog for entire loop (10 mins)
     TIMEOUT_GAME_START: float = 120
     TIMEOUT_READY: float = 30
     TIMEOUT_READY_VERIFY: float = 10.0
@@ -62,44 +64,48 @@ class BotConfiguration:
     TIMEOUT_LOBBY_VERIFY: float = 5.0
     TIMEOUT_LOBBY_JOIN: float = 6.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
-    
+
     # --- Wait Constants ---
-    WAIT_RETIRE_STEP: float = 1.0     
+    WAIT_RETIRE_STEP: float = 1.0
     WAIT_DISCONNECT_COOLING: float = 10.0
-    WAIT_INGAME_AUTO_READY: float = 1.5 
-    WAIT_RESTART: float = 5.0         # Game relaunch buffer
-    WAIT_STARTUP_STEP: float = 0.8    # Splash screen pause
-    
+    WAIT_INGAME_AUTO_READY: float = 1.5
+    WAIT_RESTART: float = 5.0  # Game relaunch buffer
+    WAIT_STARTUP_STEP: float = 0.8  # Splash screen pause
+
     # --- Vision & Matching ---
-    CONF_NORMAL: float = 0.80 
+    CONF_NORMAL: float = 0.80
     CONF_HIGH: float = 0.95
-    CONF_READY: float = 0.95 
+    CONF_READY: float = 0.95
     CONF_LOOSE: float = 0.70
-    CONF_POPUP: float = 0.98 
-    CONF_VERIFY_ACTION: float = 0.85  # Slightly looser to confirm disappearance reliably
-    AUTO_MATCH_CONFIDENCE: float = 0.92 
-    
+    CONF_POPUP: float = 0.98
+    CONF_VERIFY_ACTION: float = (
+        0.85  # Slightly looser to confirm disappearance reliably
+    )
+    AUTO_MATCH_CONFIDENCE: float = 0.92
+
     # --- Matching Algorithm ---
     ROOM_MATCH_WEIGHT: float = 0.1
     MAX_RULE_DISTANCE: int = 110
     AUTO_ICON_DEDUPE_DIST: int = 60
-    
+
     # --- Operational Safety ---
     WINDOW_NOT_FOUND_RETRIES: int = 5
     MAX_DISCONNECT_RETRIES: int = 3
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
     POLL_MAIN_LOOP: float = 0.05
-    POLL_UI_VERIFY: float = 0.05      # 20fps - Optimal balance between V3 lag and V4 twitchiness
-    POLL_RECOVERY: float = 0.5        # Baseline anchor scan
-    POLL_RUNNING: float = 2.0         # End-of-quest check
-    
+    POLL_UI_VERIFY: float = (
+        0.05  # 20fps - Optimal balance between V3 lag and V4 twitchiness
+    )
+    POLL_RECOVERY: float = 0.5  # Baseline anchor scan
+    POLL_RUNNING: float = 2.0  # End-of-quest check
+
     # --- Behavioral Stealth ---
-    FATIGUE_INCREASE_RATE: float = 0.001 
+    FATIGUE_INCREASE_RATE: float = 0.001
     MAX_FATIGUE_MODIFIER: float = 1.15
     DISTRACTION_CHANCE: Tuple[int, int] = (25, 45)
     DISTRACTION_DURATION: Tuple[int, int] = (120, 480)
-    
+
     # --- Technical Flags ---
     TAKE_DEBUG_SCREENSHOTS: bool = False
     MANAGE_INGAME_AUTO: bool = True
@@ -109,37 +115,61 @@ class BotConfiguration:
 
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
-            "SHIKAI_MAX": { 
-                "DELAY_COGNITIVE": (0.25, 0.05), "DELAY_SNIPE": 0.15, "DELAY_TRANSITION": 0.3,
-                "DELAY_SOAK": 0.1, "DELAY_TAP": 1.5,
-                "DELAY_POPUP": 0.4, "DELAY_READY": 0.15, "WAIT_ROOM_LOAD": 0.2,
-                "WAIT_SEARCH_AGAIN": 0.6, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
-                "DURATION_MINS": (45, 90)
+            "SHIKAI_MAX": {
+                "DELAY_COGNITIVE": (0.25, 0.05),
+                "DELAY_SNIPE": 0.15,
+                "DELAY_TRANSITION": 0.3,
+                "DELAY_SOAK": 0.1,
+                "DELAY_TAP": 1.5,
+                "DELAY_POPUP": 0.4,
+                "DELAY_READY": 0.15,
+                "WAIT_ROOM_LOAD": 0.2,
+                "WAIT_SEARCH_AGAIN": 0.6,
+                "WAIT_LOBBY_READY": 0.3,
+                "WAIT_POST_RETRY": 1.0,
+                "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
-                "DELAY_COGNITIVE": (0.40, 0.10), "DELAY_SNIPE": 0.30, "DELAY_TRANSITION": 0.6,
-                "DELAY_SOAK": 0.3, "DELAY_TAP": 2.5,
-                "DELAY_POPUP": 0.6, "DELAY_READY": 0.30, "WAIT_ROOM_LOAD": 0.5,
-                "WAIT_SEARCH_AGAIN": 1.2, "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0,
-                "DURATION_MINS": (60, 180)
-            }
+                "DELAY_COGNITIVE": (0.40, 0.10),
+                "DELAY_SNIPE": 0.30,
+                "DELAY_TRANSITION": 0.6,
+                "DELAY_SOAK": 0.3,
+                "DELAY_TAP": 2.5,
+                "DELAY_POPUP": 0.6,
+                "DELAY_READY": 0.30,
+                "WAIT_ROOM_LOAD": 0.5,
+                "WAIT_SEARCH_AGAIN": 1.2,
+                "WAIT_LOBBY_READY": 0.6,
+                "WAIT_POST_RETRY": 2.0,
+                "DURATION_MINS": (60, 180),
+            },
         }
         self.TEMPLATES = {
-            "game_start": "images/game_start.png", "close_news": "images/close_news.png",
-            "coop_1": "images/coop-1.png", "coop_2": "images/coop-2.png",
-            "coop_quest": "images/coop_quest.png", "open_coop_quest": "images/open_coop_quest.png",
-            "enter_room_button": "images/join_coop_quest.png", "search_again": "images/search_again.png",
-            "auto": "images/auto_icon.png", "ingame_auto_off": "images/ingame_auto_off.png",
-            "ingame_auto_on": "images/ingame_auto_on.png", "room_rules_valid": "images/room_rules_valid.png",
+            "game_start": "images/game_start.png",
+            "close_news": "images/close_news.png",
+            "coop_1": "images/coop-1.png",
+            "coop_2": "images/coop-2.png",
+            "coop_quest": "images/coop_quest.png",
+            "open_coop_quest": "images/open_coop_quest.png",
+            "enter_room_button": "images/join_coop_quest.png",
+            "search_again": "images/search_again.png",
+            "auto": "images/auto_icon.png",
+            "ingame_auto_off": "images/ingame_auto_off.png",
+            "ingame_auto_on": "images/ingame_auto_on.png",
+            "room_rules_valid": "images/room_rules_valid.png",
             "room_not_met": "images/room_not_met.png",
-            "close": "images/close.png", "ready": "images/ready_button.png",
-            "retire": "images/retire.png", "okay": "images/okay.png",
+            "close": "images/close.png",
+            "ready": "images/ready_button.png",
+            "retire": "images/retire.png",
+            "okay": "images/okay.png",
             "closed_room_coop_quest_menu": "images/closed_room_coop_quest_menu.png",
-            "tap1": "images/tap1.png", "tap2": "images/tap2.png",
-            "retry": "images/retry.png", "unavailable_close": "images/unavailable_close.png",
+            "tap1": "images/tap1.png",
+            "tap2": "images/tap2.png",
+            "retry": "images/retry.png",
+            "unavailable_close": "images/unavailable_close.png",
             "disconnect_retry": "images/disconnect_rerty.png",
         }
-        
+
         # Apply initial profile
         self._apply_profile("SHIKAI_MAX")
 
@@ -158,7 +188,9 @@ class BotConfiguration:
         self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
 
 
-def human_delay(profile: Union[float, Tuple[float, float]], fatigue: float = 1.0) -> None:
+def human_delay(
+    profile: Union[float, Tuple[float, float]], fatigue: float = 1.0
+) -> None:
     if isinstance(profile, (float, int)):
         mu, sigma = float(profile), float(profile) * 0.1
     else:
@@ -166,37 +198,55 @@ def human_delay(profile: Union[float, Tuple[float, float]], fatigue: float = 1.0
     delay = random.gauss(mu * fatigue, sigma)
     time.sleep(max(delay, (mu * fatigue) * 0.05))
 
-class GameWindowNotFoundError(Exception): pass
+
+class GameWindowNotFoundError(Exception):
+    pass
+
 
 class BBSBot:
     """
     Bleach: Brave Souls Autonomous Agent V4.0 'Stealth Engine'.
     Universal "Check -> Soak -> Click -> Verify" Architecture. Zero xdotool lockups.
     """
-    
+
     RECOVERY_MAP: List[Tuple[str, str]] = [
-        ("READY", "ready"), ("RUNNING", "ingame_auto_on"), ("RUNNING", "ingame_auto_off"),
-        ("CHECK_RUN_START", "retire"), ("FINISH", "tap1"),
-        ("FINISH", "tap2"), ("FINISH", "retry"), 
-        ("SCAN_ROOMS", "search_again"), ("ENTER_ROOM_LIST", "enter_room_button"),
-        ("MENU", "open_coop_quest"), ("MENU", "coop_quest"), ("GAME_STARTUP", "game_start"),
-        ("MENU", "closed_room_coop_quest_menu"), ("SCAN_ROOMS", "close"),
-        ("SCAN_ROOMS", "unavailable_close"), ("MENU", "disconnect_retry")
+        ("READY", "ready"),
+        ("RUNNING", "ingame_auto_on"),
+        ("RUNNING", "ingame_auto_off"),
+        ("CHECK_RUN_START", "retire"),
+        ("FINISH", "tap1"),
+        ("FINISH", "tap2"),
+        ("FINISH", "retry"),
+        ("SCAN_ROOMS", "search_again"),
+        ("ENTER_ROOM_LIST", "enter_room_button"),
+        ("MENU", "open_coop_quest"),
+        ("MENU", "coop_quest"),
+        ("GAME_STARTUP", "game_start"),
+        ("MENU", "closed_room_coop_quest_menu"),
+        ("SCAN_ROOMS", "close"),
+        ("SCAN_ROOMS", "unavailable_close"),
+        ("MENU", "disconnect_retry"),
     ]
 
     def __init__(self, config: BotConfiguration = BotConfiguration()) -> None:
         self.config = config
-        
+
         self.active_profile: str = "SHIKAI_MAX"
-        self.next_profile_swap: float = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES["SHIKAI_MAX"]["DURATION_MINS"]) * 60
-        
-        self.state: str = "RECOVERY" 
+        self.next_profile_swap: float = (
+            time.time()
+            + random.randint(
+                *self.config.CIRCADIAN_PROFILES["SHIKAI_MAX"]["DURATION_MINS"]
+            )
+            * 60
+        )
+
+        self.state: str = "RECOVERY"
         self.prev_state: Optional[str] = None
         self.run_count: int = 0
         self.start_time: float = time.time()
         self.fatigue_start_time: float = time.time()
         self.last_state_change_time: float = time.time()
-        self.quest_watchdog: float = time.time() 
+        self.quest_watchdog: float = time.time()
         self.region: Optional[Tuple[int, int, int, int]] = None
         self.win_id: Optional[str] = None
         self.fatigue_modifier: float = 1.0
@@ -205,85 +255,141 @@ class BBSBot:
         self.consecutive_recovery_count: int = 0
         self.search_start_time: float = 0
         self.next_distraction_run: int = random.randint(*self.config.DISTRACTION_CHANCE)
-        
+
         self.handlers = {
-            "MENU": self.handle_menu, "ENTER_ROOM_LIST": self.handle_enter_room_list,
-            "SCAN_ROOMS": self.handle_scan_rooms, "READY": self.handle_ready,
-            "CHECK_RUN_START": self.handle_check_run_start, "RUNNING": self.handle_running,
-            "FINISH": self.handle_finish, "DISTRACTION": self.handle_distraction,
-            "RECOVERY": self.handle_recovery, "GAME_STARTUP": self.handle_game_startup
+            "MENU": self.handle_menu,
+            "ENTER_ROOM_LIST": self.handle_enter_room_list,
+            "SCAN_ROOMS": self.handle_scan_rooms,
+            "READY": self.handle_ready,
+            "CHECK_RUN_START": self.handle_check_run_start,
+            "RUNNING": self.handle_running,
+            "FINISH": self.handle_finish,
+            "DISTRACTION": self.handle_distraction,
+            "RECOVERY": self.handle_recovery,
+            "GAME_STARTUP": self.handle_game_startup,
         }
 
         self.cached_templates: Dict[str, Image.Image] = {}
         self._load_templates()
         pyautogui.FAILSAFE = False
         self.check_dependencies()
-        
-        try: self.disp = display.Display()
+
+        try:
+            self.disp = display.Display()
         except Exception:
-            logger.error("FATAL: X11 Display error."); sys.exit(1)
-            
+            logger.error("FATAL: X11 Display error.")
+            sys.exit(1)
+
         logger.info("BBS Bot V4.0 'Stealth Engine' Initialized.")
 
     def _load_templates(self) -> None:
         for key, path in self.config.TEMPLATES.items():
-            try: self.cached_templates[key] = Image.open(path).convert('RGB')
-            except Exception as e: logger.error(f"Failed to cache {key}: {e}")
+            try:
+                self.cached_templates[key] = Image.open(path).convert("RGB")
+            except Exception as e:
+                logger.error(f"Failed to cache {key}: {e}")
 
     def check_dependencies(self) -> None:
         for cmd in ["xdotool", "wmctrl", "pkill", "xprop"]:
             if subprocess.run(["which", cmd], capture_output=True).returncode != 0:
-                logger.error(f"FATAL: Missing dependency: {cmd}"); sys.exit(1)
+                logger.error(f"FATAL: Missing dependency: {cmd}")
+                sys.exit(1)
 
     # --- VISION ---
     def get_ui_region(self, element: str) -> Optional[Tuple[int, int, int, int]]:
-        if not self.region: return None
+        if not self.region:
+            return None
         gx, gy, gw, gh = self.region
-        if element == "auto": return (gx + gw // 2, gy + gh // 2, gw // 2, gh // 2)
-        if element == "center_popup": return (gx + gw // 4, gy + gh // 4, gw // 2, gh // 2)
+        if element == "auto":
+            return (gx + gw // 2, gy + gh // 2, gw // 2, gh // 2)
+        if element == "center_popup":
+            return (gx + gw // 4, gy + gh // 4, gw // 2, gh // 2)
         return self.region
 
-    def find_image(self, key: str, confidence: Optional[float] = None, region: Optional[Tuple] = None) -> Optional[pyscreeze.Box]:
+    def find_image(
+        self,
+        key: str,
+        confidence: Optional[float] = None,
+        region: Optional[Tuple] = None,
+    ) -> Optional[pyscreeze.Box]:
         template = self.cached_templates.get(key)
         conf = confidence or self.config.CONF_NORMAL
         reg = region or self.region
-        if not template or not reg: return None
+        if not template or not reg:
+            return None
         try:
             res = pyautogui.locateOnScreen(template, region=reg, confidence=conf)
-            if res: return res
-            return pyautogui.locateOnScreen(template, region=reg, confidence=conf - 0.05)
-        except Exception: return None
+            if res:
+                return res
+            return pyautogui.locateOnScreen(
+                template, region=reg, confidence=conf - 0.05
+            )
+        except Exception:
+            return None
 
-    def find_stable_image(self, key: str, confidence: Optional[float] = None, region: Optional[Tuple] = None, frames: int = 2) -> Optional[pyscreeze.Box]:
+    def find_stable_image(
+        self,
+        key: str,
+        confidence: Optional[float] = None,
+        region: Optional[Tuple] = None,
+        frames: int = 2,
+    ) -> Optional[pyscreeze.Box]:
         for _ in range(frames):
             res = self.find_image(key, confidence, region)
-            if not res: return None
+            if not res:
+                return None
             time.sleep(self.config.POLL_UI_VERIFY)
         return res
 
     def find_all(self, key: str, confidence: float = 0.8) -> List[pyscreeze.Box]:
         template = self.cached_templates.get(key)
-        if not template or not self.region: return []
+        if not template or not self.region:
+            return []
         try:
-            res = list(pyautogui.locateAllOnScreen(template, region=self.region, confidence=confidence))
-            if res: return res
-            return list(pyautogui.locateAllOnScreen(template, region=self.region, confidence=confidence - 0.05))
-        except Exception: return []
+            res = list(
+                pyautogui.locateAllOnScreen(
+                    template, region=self.region, confidence=confidence
+                )
+            )
+            if res:
+                return res
+            return list(
+                pyautogui.locateAllOnScreen(
+                    template, region=self.region, confidence=confidence - 0.05
+                )
+            )
+        except Exception:
+            return []
 
     # --- THE V4 STEALTH CORE ---
-    def interact(self, target: Union[str, pyscreeze.Box], description: str, verify_key: Optional[str] = None, target_state: Optional[str] = None, wait_for_appearance: bool = False, custom_delay: Optional[Union[float, Tuple[float, float]]] = None, confidence: Optional[float] = None, region: Optional[Tuple[int, int, int, int]] = None) -> bool:
+    def interact(
+        self,
+        target: Union[str, pyscreeze.Box],
+        description: str,
+        verify_key: Optional[str] = None,
+        target_state: Optional[str] = None,
+        wait_for_appearance: bool = False,
+        custom_delay: Optional[Union[float, Tuple[float, float]]] = None,
+        confidence: Optional[float] = None,
+        region: Optional[Tuple[int, int, int, int]] = None,
+    ) -> bool:
         """
         Stateful Interaction: Locate -> Click -> Reclaim Focus.
         No blocking retry loop. Letting the State Machine handle the tempo.
         """
         conf = confidence or self.config.CONF_NORMAL
-        
+
         # 1. Locate Target
-        box = target if isinstance(target, pyscreeze.Box) else self.find_image(target, confidence=conf, region=region)
+        box = (
+            target
+            if isinstance(target, pyscreeze.Box)
+            else self.find_image(target, confidence=conf, region=region)
+        )
         if not box:
             # V3 Strategy: If button is already gone (and we wanted it gone), transition
             if verify_key == target and not wait_for_appearance:
-                if target_state: self.transition_to(target_state)
+                if target_state:
+                    self.transition_to(target_state)
                 return True
             return False
 
@@ -294,27 +400,47 @@ class BBSBot:
         # 3. Gaussian Click Calculation
         mu_x, mu_y = box.left + box.width / 2, box.top + box.height / 2
         sigma_x, sigma_y = box.width / 5, box.height / 5
-        click_x, click_y = int(random.gauss(mu_x, sigma_x)), int(random.gauss(mu_y, sigma_y))
+        click_x, click_y = (
+            int(random.gauss(mu_x, sigma_x)),
+            int(random.gauss(mu_y, sigma_y)),
+        )
         click_x = max(box.left, min(click_x, box.left + box.width - 1))
         click_y = max(box.top, min(click_y, box.top + box.height - 1))
 
         # 4. Focus Capture (V2 Style)
         current_focus = None
         try:
-            current_focus = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
-        except Exception: pass
+            current_focus = subprocess.check_output(
+                ["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL
+            ).strip()
+        except Exception:
+            pass
 
         # 5. Execute X11 Ghost Click
         success = self._send_x11_click(click_x, click_y)
-        logger.info(f"INTERACT [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
+        logger.info(
+            f"INTERACT [Run:{self.run_count}]: {description} at ({click_x}, {click_y})"
+        )
 
         # 6. Unconditional Refocus (V2 Hammer)
         if success and current_focus and current_focus != self.win_id:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
                 # V2 Strategy: Aggressively reclaim focus regardless of current state
-                subprocess.run(["xdotool", "windowactivate", "--sync", current_focus, "windowraise", current_focus], check=False, stderr=subprocess.DEVNULL)
-            except Exception: pass
+                subprocess.run(
+                    [
+                        "xdotool",
+                        "windowactivate",
+                        "--sync",
+                        current_focus,
+                        "windowraise",
+                        current_focus,
+                    ],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
+            except Exception:
+                pass
 
         # 7. Rapid Logic Exit
         # We don't verify here anymore. We return immediately and let the main loop re-evaluate.
@@ -328,108 +454,190 @@ class BBSBot:
             geom = window.get_geometry()
             rel_x, rel_y = x - geom.x, y - geom.y
             details = {
-                "root": self.disp.screen().root, "window": window, "same_screen": 1, "child": X.NONE,
-                "root_x": x, "root_y": y, "event_x": rel_x, "event_y": rel_y, "state": 0, "detail": 1,
+                "root": self.disp.screen().root,
+                "window": window,
+                "same_screen": 1,
+                "child": X.NONE,
+                "root_x": x,
+                "root_y": y,
+                "event_x": rel_x,
+                "event_y": rel_y,
+                "state": 0,
+                "detail": 1,
                 "time": int(time.time() * 1000) & 0xFFFFFFFF,
             }
             window.send_event(protocol.event.ButtonPress(**details), propagate=True)
             window.send_event(protocol.event.ButtonRelease(**details), propagate=True)
-            self.disp.flush(); self.disp.sync(); return True
-        except Exception: return False
+            self.disp.flush()
+            self.disp.sync()
+            return True
+        except Exception:
+            return False
 
     # --- PROCEDURAL HANDLERS ---
     def handle_global_popups(self) -> bool:
-        popups = ["close", "close_news", "okay", "unavailable_close", "closed_room_coop_quest_menu", "disconnect_retry"]
+        popups = [
+            "close",
+            "close_news",
+            "okay",
+            "unavailable_close",
+            "closed_room_coop_quest_menu",
+            "disconnect_retry",
+        ]
         for key in popups:
             conf = 0.99 if key == "disconnect_retry" else self.config.CONF_POPUP
             reg = self.region
-            if key in ["okay", "closed_room_coop_quest_menu", "disconnect_retry", "close", "unavailable_close"]:
+            if key in [
+                "okay",
+                "closed_room_coop_quest_menu",
+                "disconnect_retry",
+                "close",
+                "unavailable_close",
+            ]:
                 reg = self.get_ui_region("center_popup")
-            
+
             if self.find_image(key, confidence=conf, region=reg):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
                 if key == "disconnect_retry":
                     self.disconnect_retry_count += 1
                     if self.disconnect_retry_count > self.config.MAX_DISCONNECT_RETRIES:
-                        self.recover_game(); return True
-                
-                self.interact(key, f"dismiss {key}", verify_key=key, custom_delay=self.config.DELAY_POPUP, confidence=conf, region=reg)
-                if key == "disconnect_retry": time.sleep(self.config.WAIT_DISCONNECT_COOLING)
-                else: human_delay(self.config.DELAY_POPUP, self.fatigue_modifier)
+                        self.recover_game()
+                        return True
 
-                if self.state != "GAME_STARTUP": self.transition_to("MENU")
+                self.interact(
+                    key,
+                    f"dismiss {key}",
+                    verify_key=key,
+                    custom_delay=self.config.DELAY_POPUP,
+                    confidence=conf,
+                    region=reg,
+                )
+                if key == "disconnect_retry":
+                    time.sleep(self.config.WAIT_DISCONNECT_COOLING)
+                else:
+                    human_delay(self.config.DELAY_POPUP, self.fatigue_modifier)
+
+                if self.state != "GAME_STARTUP":
+                    self.transition_to("MENU")
                 return True
         return False
 
     def handle_menu(self) -> None:
-        if self.find_image("enter_room_button"): self.transition_to("ENTER_ROOM_LIST"); return
-        if self.find_image("ready"): self.transition_to("READY"); return
+        if self.find_image("enter_room_button"):
+            self.transition_to("ENTER_ROOM_LIST")
+            return
+        if self.find_image("ready"):
+            self.transition_to("READY")
+            return
 
         # Reactive State-Machine Logic: Do one thing per loop tick
         if self.find_image("open_coop_quest"):
-            self.interact("open_coop_quest", "specific quest", "enter_room_button", target_state="ENTER_ROOM_LIST", wait_for_appearance=True)
+            self.interact(
+                "open_coop_quest",
+                "specific quest",
+                "enter_room_button",
+                target_state="ENTER_ROOM_LIST",
+                wait_for_appearance=True,
+            )
             return
-        
-        if self.find_image("coop_quest"): 
-            self.interact("coop_quest", "expand menu", "open_coop_quest", wait_for_appearance=True)
+
+        if self.find_image("coop_quest"):
+            self.interact(
+                "coop_quest", "expand menu", "open_coop_quest", wait_for_appearance=True
+            )
             return
-        
+
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_EXPAND:
             self.transition_to("RECOVERY")
 
     def handle_enter_room_list(self) -> None:
-        if self.find_image("ready"): self.transition_to("READY"); return
-        
+        if self.find_image("ready"):
+            self.transition_to("READY")
+            return
+
         if self.find_stable_image("enter_room_button"):
             if self.interact("enter_room_button", "enter room list"):
                 start_load = time.time()
                 while time.time() - start_load < self.config.TIMEOUT_ROOM_LIST_LOAD:
                     if self.find_image("auto") or self.find_image("search_again"):
-                        self.transition_to("SCAN_ROOMS"); return
+                        self.transition_to("SCAN_ROOMS")
+                        return
                     time.sleep(self.config.POLL_UI_VERIFY)
                 logger.warning("Failed to verify room list load. Re-evaluating state.")
-                return 
+                return
         self.transition_to("RECOVERY")
 
     def handle_scan_rooms(self) -> None:
-        if self.find_image("ready"): self.transition_to("READY"); return
+        if self.find_image("ready"):
+            self.transition_to("READY")
+            return
 
-        if time.time() - self.search_start_time > self.config.TIMEOUT_SEARCH_MAX: self.transition_to("MENU"); return
+        if time.time() - self.search_start_time > self.config.TIMEOUT_SEARCH_MAX:
+            self.transition_to("MENU")
+            return
         autos = self.find_all("auto", confidence=self.config.CONF_NORMAL)
         if autos:
-            v_rules = self.find_all("room_rules_valid", confidence=self.config.CONF_LOOSE)
+            v_rules = self.find_all(
+                "room_rules_valid", confidence=self.config.CONF_LOOSE
+            )
             i_rules = self.find_all("room_not_met", confidence=self.config.CONF_LOOSE)
             valid = self.match_rooms(autos, v_rules, i_rules)
-            
+
             for auto, rule in valid:
-                local_reg = (auto.left - 5, auto.top - 5, auto.width + 10, auto.height + 10)
+                local_reg = (
+                    auto.left - 5,
+                    auto.top - 5,
+                    auto.width + 10,
+                    auto.height + 10,
+                )
                 if not self.find_image("auto", region=local_reg):
                     logger.warning("Local anchor lost. Room list shifted. Refreshing.")
                     return
 
-                px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
-                target_box = pyscreeze.Box(px-20, py-10, 40, 20)
-                
-                if self.interact(target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE):
+                px, py = (
+                    (auto.left + rule.left + rule.width) // 2,
+                    auto.top + auto.height // 2,
+                )
+                target_box = pyscreeze.Box(px - 20, py - 10, 40, 20)
+
+                if self.interact(
+                    target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE
+                ):
                     start_v = time.time()
                     while time.time() - start_v < self.config.TIMEOUT_LOBBY_JOIN:
-                        if self.find_stable_image("ready", confidence=self.config.CONF_READY):
-                            if self.interact("ready", "snap ready", verify_key="ready", custom_delay=self.config.WAIT_LOBBY_READY, target_state="CHECK_RUN_START"):
-                                return 
-                            return # Successfully entered lobby but verify timed out
-                        
-                        if self.find_image("closed_room_coop_quest_menu", confidence=0.9): 
-                            if self.interact("closed_room_coop_quest_menu", "close room full", verify_key="closed_room_coop_quest_menu"):
+                        if self.find_stable_image(
+                            "ready", confidence=self.config.CONF_READY
+                        ):
+                            if self.interact(
+                                "ready",
+                                "snap ready",
+                                verify_key="ready",
+                                custom_delay=self.config.WAIT_LOBBY_READY,
+                                target_state="CHECK_RUN_START",
+                            ):
+                                return
+                            return  # Successfully entered lobby but verify timed out
+
+                        if self.find_image(
+                            "closed_room_coop_quest_menu", confidence=0.9
+                        ):
+                            if self.interact(
+                                "closed_room_coop_quest_menu",
+                                "close room full",
+                                verify_key="closed_room_coop_quest_menu",
+                            ):
                                 logger.info("Room full. Pessimistic break.")
-                                return 
-                        
-                        if self.find_image("close", confidence=0.9): 
-                            if self.interact("close", "close unavailable", verify_key="close"):
+                                return
+
+                        if self.find_image("close", confidence=0.9):
+                            if self.interact(
+                                "close", "close unavailable", verify_key="close"
+                            ):
                                 logger.info("Room unavailable. Pessimistic break.")
-                                return 
-                                
+                                return
+
                         time.sleep(self.config.POLL_UI_VERIFY)
-        
+
         if self.find_image("search_again"):
             # No verify_key for search_again: just click and reset the search timer
             if self.interact("search_again", "search again"):
@@ -438,22 +646,24 @@ class BBSBot:
     def match_rooms(self, autos, valid_rules, invalid_rules):
         valid = []
         for a in self.dedupe_autos(autos):
-            ax, ay = a.left + a.width//2, a.top + a.height//2
-            best_v, min_v = None, float('inf')
-            best_i, min_i = None, float('inf')
-            
+            ax, ay = a.left + a.width // 2, a.top + a.height // 2
+            best_v, min_v = None, float("inf")
+            best_i, min_i = None, float("inf")
+
             for r in valid_rules:
-                rx, ry = r.left + r.width//2, r.top + r.height//2
+                rx, ry = r.left + r.width // 2, r.top + r.height // 2
                 if ry > ay:
                     d = abs(ry - ay) + abs(rx - ax) * self.config.ROOM_MATCH_WEIGHT
-                    if d < min_v and d < self.config.MAX_RULE_DISTANCE: min_v, best_v = d, r
-            
+                    if d < min_v and d < self.config.MAX_RULE_DISTANCE:
+                        min_v, best_v = d, r
+
             for r in invalid_rules:
-                rx, ry = r.left + r.width//2, r.top + r.height//2
+                rx, ry = r.left + r.width // 2, r.top + r.height // 2
                 if ry > ay:
                     d = abs(ry - ay) + abs(rx - ax) * self.config.ROOM_MATCH_WEIGHT
-                    if d < min_i and d < self.config.MAX_RULE_DISTANCE: min_i, best_i = d, r
-            
+                    if d < min_i and d < self.config.MAX_RULE_DISTANCE:
+                        min_i, best_i = d, r
+
             if best_v and min_v < min_i:
                 valid.append((a, best_v))
         return valid
@@ -461,42 +671,85 @@ class BBSBot:
     def dedupe_autos(self, matches):
         unique = []
         for m in matches:
-            cx, cy = m.left + m.width//2, m.top + m.height//2
-            if not any(((cx-(u.left+u.width//2))**2 + (cy-(u.top+u.height//2))**2)**0.5 < self.config.AUTO_ICON_DEDUPE_DIST for u in unique):
+            cx, cy = m.left + m.width // 2, m.top + m.height // 2
+            if not any(
+                (
+                    (cx - (u.left + u.width // 2)) ** 2
+                    + (cy - (u.top + u.height // 2)) ** 2
+                )
+                ** 0.5
+                < self.config.AUTO_ICON_DEDUPE_DIST
+                for u in unique
+            ):
                 unique.append(m)
         return unique
 
     def handle_ready(self) -> None:
         if self.find_stable_image("ready"):
-            if self.interact("ready", "ready button", verify_key="ready", target_state="CHECK_RUN_START"):
+            if self.interact(
+                "ready",
+                "ready button",
+                verify_key="ready",
+                target_state="CHECK_RUN_START",
+            ):
                 return
         else:
-            if self.find_image("ingame_auto_off") or self.find_image("ingame_auto_on") or self.find_image("retire"):
-                self.transition_to("CHECK_RUN_START"); return
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_READY: self.transition_to("RECOVERY")
+            if (
+                self.find_image("ingame_auto_off")
+                or self.find_image("ingame_auto_on")
+                or self.find_image("retire")
+            ):
+                self.transition_to("CHECK_RUN_START")
+                return
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_READY:
+            self.transition_to("RECOVERY")
 
     def handle_check_run_start(self) -> None:
         if self.find_image("ready", confidence=self.config.CONF_READY):
-            self.transition_to("READY"); return
+            self.transition_to("READY")
+            return
 
         if self.find_image("ingame_auto_on", confidence=self.config.CONF_HIGH):
-            self.transition_to("RUNNING"); return
-            
-        if self.find_image("ingame_auto_off", confidence=self.config.AUTO_MATCH_CONFIDENCE):
+            self.transition_to("RUNNING")
+            return
+
+        if self.find_image(
+            "ingame_auto_off", confidence=self.config.AUTO_MATCH_CONFIDENCE
+        ):
             if self.config.MANAGE_INGAME_AUTO:
-                if self.interact("ingame_auto_off", "enable auto", verify_key="ingame_auto_on", target_state="RUNNING", wait_for_appearance=True, confidence=self.config.AUTO_MATCH_CONFIDENCE):
+                if self.interact(
+                    "ingame_auto_off",
+                    "enable auto",
+                    verify_key="ingame_auto_on",
+                    target_state="RUNNING",
+                    wait_for_appearance=True,
+                    confidence=self.config.AUTO_MATCH_CONFIDENCE,
+                ):
                     return
-            self.transition_to("RUNNING"); return
-            
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest()
+            self.transition_to("RUNNING")
+            return
+
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START:
+            self.retire_from_quest()
 
     def handle_running(self) -> None:
         if self.config.MANAGE_INGAME_AUTO:
-            if self.find_image("ingame_auto_off", confidence=self.config.AUTO_MATCH_CONFIDENCE):
-                self.interact("ingame_auto_off", "enable auto", verify_key="ingame_auto_on", wait_for_appearance=True, confidence=self.config.AUTO_MATCH_CONFIDENCE)
-            
-        if self.find_image("tap1"): self.transition_to("FINISH"); return
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX: self.transition_to("RECOVERY")
+            if self.find_image(
+                "ingame_auto_off", confidence=self.config.AUTO_MATCH_CONFIDENCE
+            ):
+                self.interact(
+                    "ingame_auto_off",
+                    "enable auto",
+                    verify_key="ingame_auto_on",
+                    wait_for_appearance=True,
+                    confidence=self.config.AUTO_MATCH_CONFIDENCE,
+                )
+
+        if self.find_image("tap1"):
+            self.transition_to("FINISH")
+            return
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX:
+            self.transition_to("RECOVERY")
         time.sleep(self.config.POLL_RUNNING)
 
     def handle_finish(self) -> None:
@@ -511,83 +764,124 @@ class BBSBot:
         if self.find_image("retry"):
             if self.interact("retry", "retry quest", verify_key="retry"):
                 self.run_count += 1
-                self.consecutive_recovery_count = 0 # Reset recovery limit on successful run
-                logger.info(f"Run #{self.run_count} complete. Next distraction at run {self.next_distraction_run}.")
+                self.consecutive_recovery_count = (
+                    0  # Reset recovery limit on successful run
+                )
+                logger.info(
+                    f"Run #{self.run_count} complete. Next distraction at run {self.next_distraction_run}."
+                )
                 # post-retry wait remains briefly for lobby prep
                 time.sleep(self.config.WAIT_POST_RETRY)
                 if self.run_count >= self.next_distraction_run:
-                    self.transition_to("DISTRACTION"); return
-                self.transition_to("ENTER_ROOM_LIST"); return
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY: self.transition_to("RECOVERY")
+                    self.transition_to("DISTRACTION")
+                    return
+                self.transition_to("ENTER_ROOM_LIST")
+                return
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
+            self.transition_to("RECOVERY")
 
     def handle_game_startup(self) -> None:
         for key in ["game_start", "close_news", "coop_1", "coop_2"]:
-            conf = self.config.CONF_HIGH if key in ["coop_1", "coop_2"] else self.config.CONF_NORMAL
+            conf = (
+                self.config.CONF_HIGH
+                if key in ["coop_1", "coop_2"]
+                else self.config.CONF_NORMAL
+            )
             if self.find_image(key, confidence=conf):
                 # wait_for_appearance=False (default) means it waits for the button to DISAPPEAR
-                self.interact(key, f"startup {key}", verify_key=key, wait_for_appearance=False, confidence=conf)
+                self.interact(
+                    key,
+                    f"startup {key}",
+                    verify_key=key,
+                    wait_for_appearance=False,
+                    confidence=conf,
+                )
                 # time.sleep removed: interact already verified stability
-                return 
+                return
 
-        window_age = time.time() - getattr(self, '_startup_window_time', time.time())
+        window_age = time.time() - getattr(self, "_startup_window_time", time.time())
         if window_age > 2.0 and (
-            self.find_image("coop_quest", confidence=self.config.CONF_HIGH) or
-            self.find_image("open_coop_quest", confidence=self.config.CONF_HIGH)):
+            self.find_image("coop_quest", confidence=self.config.CONF_HIGH)
+            or self.find_image("open_coop_quest", confidence=self.config.CONF_HIGH)
+        ):
             logger.info("GAME_STARTUP: Lobby detected, skipping splash sequence.")
             self.transition_to("MENU")
 
     def handle_recovery(self) -> None:
         elapsed = time.time() - self.last_state_change_time
         if int(elapsed) > 0 and int(elapsed) % 10 == 0:
-            if not hasattr(self, '_last_recovery_log') or int(elapsed) != self._last_recovery_log:
-                logger.info(f"RECOVERY: Still searching for anchors... ({elapsed:.0f}s elapsed)")
+            if (
+                not hasattr(self, "_last_recovery_log")
+                or int(elapsed) != self._last_recovery_log
+            ):
+                logger.info(
+                    f"RECOVERY: Still searching for anchors... ({elapsed:.0f}s elapsed)"
+                )
                 self._last_recovery_log = int(elapsed)
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK:
             self.recover_game()
         else:
             for state, template in self.RECOVERY_MAP:
-                if self.find_image(template): self.transition_to(state); return
+                if self.find_image(template):
+                    self.transition_to(state)
+                    return
             time.sleep(self.config.POLL_RECOVERY)
 
     def handle_distraction(self) -> None:
         duration = random.randint(*self.config.DISTRACTION_DURATION)
         logger.info(f"DISTRACTION: Resting for {duration}s...")
         time.sleep(duration)
-        self.next_distraction_run = self.run_count + random.randint(*self.config.DISTRACTION_CHANCE)
-        self.quest_watchdog = time.time() 
-        self.fatigue_start_time = time.time() # Reset human fatigue after the break
+        self.next_distraction_run = self.run_count + random.randint(
+            *self.config.DISTRACTION_CHANCE
+        )
+        self.quest_watchdog = time.time()
+        self.fatigue_start_time = time.time()  # Reset human fatigue after the break
         self.transition_to("RECOVERY")
 
     def retire_from_quest(self) -> None:
         logger.warning("Retiring sequence...")
         if self.find_image("retire"):
             self.interact("retire", "retire")
-            if self.find_image("okay"): 
+            if self.find_image("okay"):
                 self.interact("okay", "confirm")
-                if self.find_image("closed_room_coop_quest_menu"): 
+                if self.find_image("closed_room_coop_quest_menu"):
                     self.interact("closed_room_coop_quest_menu", "final confirm")
         self.transition_to("MENU")
 
     def recover_game(self) -> None:
         self.consecutive_recovery_count += 1
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES:
-            logger.error(f"FATAL: Exceeded {self.config.MAX_CONSECUTIVE_RECOVERIES} consecutive recoveries. Game is permanently stuck or crashing.")
+            logger.error(
+                f"FATAL: Exceeded {self.config.MAX_CONSECUTIVE_RECOVERIES} consecutive recoveries. Game is permanently stuck or crashing."
+            )
             sys.exit(1)
-            
-        logger.warning(f"HARD RECOVERY initiated (Attempt {self.consecutive_recovery_count}/{self.config.MAX_CONSECUTIVE_RECOVERIES})...")
-        try: subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL)
-        except Exception: pass
+
+        logger.warning(
+            f"HARD RECOVERY initiated (Attempt {self.consecutive_recovery_count}/{self.config.MAX_CONSECUTIVE_RECOVERIES})..."
+        )
+        try:
+            subprocess.run(
+                ["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL
+            )
+        except Exception:
+            pass
 
         try:
-            if hasattr(self, 'disp') and self.disp: self.disp.close()
+            if hasattr(self, "disp") and self.disp:
+                self.disp.close()
             self.disp = display.Display()
-        except Exception: pass
+        except Exception:
+            pass
 
-        self.region = None 
+        self.region = None
         self.win_id = None
 
         time.sleep(self.config.WAIT_RESTART)
-        subprocess.Popen(["steam", "-applaunch", "1201240"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(
+            ["steam", "-applaunch", "1201240"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         start = time.time()
         window_found = False
         while time.time() - start < self.config.TIMEOUT_GAME_START:
@@ -598,29 +892,40 @@ class BBSBot:
                 break
             except GameWindowNotFoundError:
                 time.sleep(self.config.WAIT_RESTART)
-        
+
         if not window_found:
-            logger.error("Failed to find game window after restart. Exiting to prevent loop.")
+            logger.error(
+                "Failed to find game window after restart. Exiting to prevent loop."
+            )
             sys.exit(1)
-            
+
         self._startup_window_time = time.time()
         self.transition_to("GAME_STARTUP")
 
     def save_debug_screenshot(self, name: str) -> None:
-        if not self.config.TAKE_DEBUG_SCREENSHOTS: return
+        if not self.config.TAKE_DEBUG_SCREENSHOTS:
+            return
         try:
             ts = time.strftime("%Y%m%d_%H%M%S")
             fname = f"screenshots/debug_{self.state}_{name}_{ts}.png"
-            pyautogui.screenshot(fname, region=self.region); self._cleanup_screenshots()
-        except Exception: pass
+            pyautogui.screenshot(fname, region=self.region)
+            self._cleanup_screenshots()
+        except Exception:
+            pass
 
     def _cleanup_screenshots(self, max_files: int = 50) -> None:
         try:
-            files = [os.path.join("screenshots", f) for f in os.listdir("screenshots") if f.startswith("debug_")]
+            files = [
+                os.path.join("screenshots", f)
+                for f in os.listdir("screenshots")
+                if f.startswith("debug_")
+            ]
             if len(files) > max_files:
                 files.sort(key=os.path.getmtime)
-                for f in files[:-max_files]: os.remove(f)
-        except Exception: pass
+                for f in files[:-max_files]:
+                    os.remove(f)
+        except Exception:
+            pass
 
     def transition_to(self, state: str):
         if self.state != state:
@@ -629,89 +934,174 @@ class BBSBot:
             self.prev_state, self.state = self.state, state
             self.last_state_change_time = time.time()
             self.disconnect_retry_count = 0
-            if state == "SCAN_ROOMS": self.search_start_time = time.time()
-            if state == "MENU": self.quest_watchdog = time.time()
+            if state == "SCAN_ROOMS":
+                self.search_start_time = time.time()
+            if state == "MENU":
+                self.quest_watchdog = time.time()
 
     def update_fatigue(self) -> None:
         elapsed = time.time() - self.fatigue_start_time
-        self.fatigue_modifier = 1.0 + 0.15 * abs(math.sin(elapsed * (2 * math.pi / 1800)))
+        self.fatigue_modifier = 1.0 + 0.15 * abs(
+            math.sin(elapsed * (2 * math.pi / 1800))
+        )
 
     def check_session_limit(self) -> None:
         if (time.time() - self.start_time) / 3600 >= self.config.SESSION_MAX_HOURS:
-            logger.warning("SESSION LIMIT."); sys.exit(0)
+            logger.warning("SESSION LIMIT.")
+            sys.exit(0)
 
     def check_quest_watchdog(self) -> None:
         if time.time() - self.quest_watchdog > self.config.TIMEOUT_QUEST_MAX:
-            logger.error(f"WATCHDOG: Loop exceeded {self.config.TIMEOUT_QUEST_MAX}s. Hard Restarting."); self.recover_game()
+            logger.error(
+                f"WATCHDOG: Loop exceeded {self.config.TIMEOUT_QUEST_MAX}s. Hard Restarting."
+            )
+            self.recover_game()
 
     def ensure_window_ready(self) -> None:
-        if self.state in ["GAME_STARTUP", "RECOVERY"]: return
-        try: self.get_game_region(); self.window_not_found_count = 0
+        if self.state in ["GAME_STARTUP", "RECOVERY"]:
+            return
+        try:
+            self.get_game_region()
+            self.window_not_found_count = 0
         except Exception:
             self.window_not_found_count += 1
             if self.window_not_found_count >= self.config.WINDOW_NOT_FOUND_RETRIES:
-                self.recover_game(); self.window_not_found_count = 0
+                self.recover_game()
+                self.window_not_found_count = 0
 
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
-            wids = subprocess.check_output(["xdotool", "search", "--onlyvisible", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+            wids = (
+                subprocess.check_output(
+                    [
+                        "xdotool",
+                        "search",
+                        "--onlyvisible",
+                        "--name",
+                        self.config.RAW_TITLE,
+                    ],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                .strip()
+                .split()
+            )
             valid_wid = None
             for wid in wids:
                 try:
-                    pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
-                    cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
+                    pid = subprocess.check_output(
+                        ["xdotool", "getwindowpid", wid],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    ).strip()
+                    cmd = subprocess.check_output(
+                        ["ps", "-p", pid, "-o", "cmd", "--no-headers"],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    ).strip()
                     if "BleachBraveSouls" in cmd:
-                        xprop = subprocess.check_output(["xprop", "-id", wid, "WM_CLASS"], text=True, stderr=subprocess.DEVNULL)
-                        if "steam_app_1201240" in xprop.lower() or "bleach" in xprop.lower():
-                            valid_wid = wid; break
-                except Exception: continue
-            if not valid_wid: raise GameWindowNotFoundError()
-            geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", valid_wid], text=True, stderr=subprocess.DEVNULL).splitlines()
-            geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
-            self.win_id = valid_wid; sw, sh = pyautogui.size()
-            self.region = (max(0, geo["X"]), max(0, geo["Y"]), min(geo["WIDTH"], sw-geo["X"]), min(geo["HEIGHT"], sh-geo["Y"]))
+                        xprop = subprocess.check_output(
+                            ["xprop", "-id", wid, "WM_CLASS"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        )
+                        if (
+                            "steam_app_1201240" in xprop.lower()
+                            or "bleach" in xprop.lower()
+                        ):
+                            valid_wid = wid
+                            break
+                except Exception:
+                    continue
+            if not valid_wid:
+                raise GameWindowNotFoundError()
+            geo_lines = subprocess.check_output(
+                ["xdotool", "getwindowgeometry", "--shell", valid_wid],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).splitlines()
+            geo = {
+                k: int(v)
+                for k, v in (line.split("=") for line in geo_lines if "=" in line)
+            }
+            self.win_id = valid_wid
+            sw, sh = pyautogui.size()
+            self.region = (
+                max(0, geo["X"]),
+                max(0, geo["Y"]),
+                min(geo["WIDTH"], sw - geo["X"]),
+                min(geo["HEIGHT"], sh - geo["Y"]),
+            )
             return self.region
-        except Exception as e: raise GameWindowNotFoundError(e)
+        except Exception as e:
+            raise GameWindowNotFoundError(e)
 
     def setup_window_properties(self) -> None:
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
             # Targeted by ID (-i) to prevent conflicts with YouTube/Reddit/Browser content
-            subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"],
+                check=False,
+                stderr=subprocess.DEVNULL,
+            )
 
     def log_session_summary(self) -> None:
         elapsed = time.time() - self.start_time
-        logger.info(f"--- SESSION SUMMARY: {elapsed/3600:.2f}h | {self.run_count} runs ---")
+        logger.info(
+            f"--- SESSION SUMMARY: {elapsed / 3600:.2f}h | {self.run_count} runs ---"
+        )
 
     def check_circadian_rhythm(self) -> None:
         if time.time() > self.next_profile_swap:
-            self.active_profile = "SHIKAI_NORMAL" if self.active_profile == "SHIKAI_MAX" else "SHIKAI_MAX"
+            self.active_profile = (
+                "SHIKAI_NORMAL" if self.active_profile == "SHIKAI_MAX" else "SHIKAI_MAX"
+            )
             self._apply_profile(self.active_profile)
-            
-            duration_secs = random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
+
+            duration_secs = (
+                random.randint(
+                    *self.config.CIRCADIAN_PROFILES[self.active_profile][
+                        "DURATION_MINS"
+                    ]
+                )
+                * 60
+            )
             self.next_profile_swap = time.time() + duration_secs
-            
-            logger.info(f"CIRCADIAN SHIFT: Human focus changed. Entering '{self.active_profile}' for {duration_secs/60:.0f} minutes.")
+
+            logger.info(
+                f"CIRCADIAN SHIFT: Human focus changed. Entering '{self.active_profile}' for {duration_secs / 60:.0f} minutes."
+            )
 
     def run(self, test_restart: bool = False) -> None:
         try:
-            if test_restart: self.recover_game()
-            else: self.get_game_region(); self.setup_window_properties()
-        except Exception: self.recover_game()
+            if test_restart:
+                self.recover_game()
+            else:
+                self.get_game_region()
+                self.setup_window_properties()
+        except Exception:
+            self.recover_game()
         while True:
             self.ensure_window_ready()
             self.update_fatigue()
             self.check_circadian_rhythm()
             self.check_session_limit()
             self.check_quest_watchdog()
-            if self.handle_global_popups(): continue
+            if self.handle_global_popups():
+                continue
             handler = self.handlers.get(self.state)
-            if handler: handler()
-            else: self.transition_to("RECOVERY")
+            if handler:
+                handler()
+            else:
+                self.transition_to("RECOVERY")
             time.sleep(self.config.POLL_MAIN_LOOP)
 
     def __del__(self):
-        try: self.disp.close()
-        except Exception: pass
+        try:
+            self.disp.close()
+        except Exception:
+            pass
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -719,7 +1109,14 @@ if __name__ == "__main__":
     parser.add_argument("--debug-screenshots", action="store_true")
     args = parser.parse_args()
     bot = BBSBot()
-    if args.debug_screenshots: bot.config.TAKE_DEBUG_SCREENSHOTS = True
-    try: bot.run(test_restart=args.test_restart)
-    except KeyboardInterrupt: logger.info("Stopped."); bot.log_session_summary()
-    except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
+    if args.debug_screenshots:
+        bot.config.TAKE_DEBUG_SCREENSHOTS = True
+    try:
+        bot.run(test_restart=args.test_restart)
+    except KeyboardInterrupt:
+        logger.info("Stopped.")
+        bot.log_session_summary()
+    except Exception as e:
+        logger.exception(f"Fatal: {e}")
+        bot.log_session_summary()
+        sys.exit(1)
