@@ -33,6 +33,11 @@
 *   **Solution:** **Dual-Confidence Filter**.
 *   **Implementation:** Checks for Green (ON) first at 0.85 (Forgiving). If found, exits. Only checks for Grey (OFF) at 0.995 (Strict).
 
+### 6. Logic Drift (Over-Engineering)
+*   **Problem:** Attempted "Coordinate Masks" and "Height Cutoffs" blinded the bot to rooms at the bottom of the list.
+*   **Solution:** **Raw Restoration**. 
+*   **Implementation:** Reverted to full-window scanning for room detection to match the successful overnight build. Removed all aggressive masks that were causing false-negative room rejections.
+
 ## Validation Standards
 *   **Type Integrity:** 100% `mypy` verified to prevent `NoneType` crashes during long-duration sessions.
 *   **Linting:** 100% `ruff` (PEP 8) compliant.
