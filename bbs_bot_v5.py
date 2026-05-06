@@ -45,7 +45,7 @@ class BotConfiguration:
     WAIT_ROOM_LOAD: float = 0.6       # Increased to allow room list expansion
     WAIT_SEARCH_AGAIN: float = 0.8    
     WAIT_LOBBY_READY: float = 0.5     
-    WAIT_POST_RETRY: float = 1.5      
+    WAIT_POST_RETRY: float = 1.0
     WAIT_REFOCUS: float = 0.02        # Faster Reclaim to beat focus stealing
     WAIT_REFRESH_COOLDOWN: float = 0.6
     WAIT_STABILIZE_ANIMATION: float = 1.2
@@ -73,6 +73,7 @@ class BotConfiguration:
     CONF_NORMAL: float = 0.80 
     CONF_HIGH: float = 0.95
     CONF_READY: float = 0.95 
+    CONF_STARTUP: float = 0.85
     CONF_LOOSE: float = 0.70
     CONF_POPUP: float = 0.80 
     CONF_VERIFY_ACTION: float = 0.80  # Match CONF_NORMAL for consistency
@@ -82,6 +83,7 @@ class BotConfiguration:
     ROOM_MATCH_WEIGHT: float = 0.1
     MAX_RULE_DISTANCE: int = 110
     AUTO_ICON_DEDUPE_DIST: int = 60
+    CLICK_SIGMA_FACTOR: float = 10.0
     
     # --- Operational Safety ---
     WINDOW_NOT_FOUND_RETRIES: int = 5
@@ -112,16 +114,16 @@ class BotConfiguration:
             "SHIKAI_MAX": { # "PRO GAMER": Elite focus, perfect cadence
                 "DELAY_COGNITIVE": (0.38, 0.05), "DELAY_SNIPE": 0.20, "DELAY_TRANSITION": 0.5,
                 "DELAY_SOAK": 0.2, "DELAY_TAP": 1.5,
-                "DELAY_POPUP": 1.5, "DELAY_READY": 0.70, "WAIT_ROOM_LOAD": 0.3,
-                "WAIT_SEARCH_AGAIN": 0.4, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
+                "DELAY_POPUP": 1.5, "DELAY_READY": 0.70, "WAIT_ROOM_LOAD": 0.6,
+                "WAIT_SEARCH_AGAIN": 0.6, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
                 "WAIT_REFRESH_COOLDOWN": 0.5, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "DURATION_MINS": (45, 90)
             },
             "SHIKAI_NORMAL": { # "CASUAL": Distracted, watching Netflix
                 "DELAY_COGNITIVE": (0.55, 0.10), "DELAY_SNIPE": 0.40, "DELAY_TRANSITION": 1.2,
                 "DELAY_SOAK": 0.4, "DELAY_TAP": 2.5,
-                "DELAY_POPUP": 2.0, "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 0.6,
-                "WAIT_SEARCH_AGAIN": 1.2, "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0,
+                "DELAY_POPUP": 2.0, "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 0.8,
+                "WAIT_SEARCH_AGAIN": 0.8, "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0,
                 "WAIT_REFRESH_COOLDOWN": 1.2, "WAIT_STABILIZE_ANIMATION": 1.2,
                 "DURATION_MINS": (60, 180)
             }
@@ -301,7 +303,7 @@ class BBSBot:
 
         # 3. Gaussian Click Calculation
         mu_x, mu_y = box.left + box.width / 2, box.top + box.height / 2
-        sigma_x, sigma_y = box.width / 5, box.height / 5
+        sigma_x, sigma_y = box.width / self.config.CLICK_SIGMA_FACTOR, box.height / self.config.CLICK_SIGMA_FACTOR
         click_x, click_y = int(random.gauss(mu_x, sigma_x)), int(random.gauss(mu_y, sigma_y))
         click_x = max(box.left, min(click_x, box.left + box.width - 1))
         click_y = max(box.top, min(click_y, box.top + box.height - 1))
@@ -597,7 +599,7 @@ class BBSBot:
 
     def handle_game_startup(self) -> None:
         for key in ["game_start", "close_news", "coop_1", "coop_2"]:
-            conf = self.config.CONF_HIGH if key in ["coop_1", "coop_2"] else self.config.CONF_NORMAL
+            conf = self.config.CONF_STARTUP if key in ["coop_1", "coop_2"] else self.config.CONF_NORMAL
             if self.find_image(key, confidence=conf):
                 # wait_for_appearance=False (default) means it waits for the button to DISAPPEAR
                 self.smart_click(key, f"startup {key}", verify_key=key, wait_for_appearance=False, confidence=conf)
