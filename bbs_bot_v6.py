@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 import pyautogui
 import pyscreeze
-from Xlib import X, display, protocol, error
+from Xlib import X, display, protocol
 from PIL import Image
 
 # --- LOGGING SETUP ---
@@ -48,6 +48,7 @@ class BotConfiguration:
     WAIT_POST_RETRY: float = 1.0
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 0.8
+    DELAY_POST_POPUP: float = 0.3
     WAIT_STABILIZE_ANIMATION: float = 0.8
     SAFETY_FLOOR_FACTOR: float = 0.05
     
@@ -62,7 +63,7 @@ class BotConfiguration:
     TIMEOUT_LOBBY_JOIN: float = 6.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
     TIMEOUT_SCAN_IDLE: float = 20.0
-    TIMEOUT_VERIFY_UI: float = 0.5
+    TIMEOUT_VERIFY_UI: float = 0.8
     
     # --- Wait Constants ---
     WAIT_RETIRE_STEP: float = 1.0     
@@ -99,6 +100,7 @@ class BotConfiguration:
     POLL_RECOVERY: float = 0.5
     POLL_RUNNING: float = 0.5
     POLL_PROPERTY_SYNC: float = 5.0
+    CASUAL_LINGER_RUNS: Tuple[int, int] = (8, 16)
     
     # --- Behavioral Stealth ---
     FATIGUE_INCREASE_RATE: float = 0.001 
@@ -119,19 +121,21 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": { # "PRO GAMER": Elite focus, perfect cadence
-                "DELAY_COGNITIVE": (1.15, 0.15), "DELAY_SNIPE": 0.20, "DELAY_TRANSITION": 0.5,
+                "DELAY_COGNITIVE": (0.68, 0.05), "DELAY_SNIPE": 0.20, "DELAY_TRANSITION": 0.5,
                 "DELAY_SOAK": 0.2, "DELAY_TAP": 1.5,
-                "DELAY_POPUP": 1.5, "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 0.8,
-                "WAIT_SEARCH_AGAIN": 0.9, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
-                "WAIT_REFRESH_COOLDOWN": 0.9, "DELAY_POST_POPUP": 0.3, "WAIT_STABILIZE_ANIMATION": 0.8,
+                "DELAY_POPUP": 1.5, "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 0.6,
+                "WAIT_SEARCH_AGAIN": 0.7, "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0,
+                "WAIT_REFRESH_COOLDOWN": 0.8, "DELAY_POST_POPUP": 0.3, "WAIT_STABILIZE_ANIMATION": 0.8,
+                "TIMEOUT_VERIFY_UI": 0.8,
                 "DURATION_MINS": (45, 90)
             },
             "SHIKAI_NORMAL": { # "CASUAL": Distracted, watching Netflix
-                "DELAY_COGNITIVE": (1.50, 0.25), "DELAY_SNIPE": 0.40, "DELAY_TRANSITION": 1.2,
+                "DELAY_COGNITIVE": (0.85, 0.10), "DELAY_SNIPE": 0.40, "DELAY_TRANSITION": 1.2,
                 "DELAY_SOAK": 0.4, "DELAY_TAP": 2.5,
-                "DELAY_POPUP": 2.0, "DELAY_READY": 1.10, "WAIT_ROOM_LOAD": 1.0,
+                "DELAY_POPUP": 2.0, "DELAY_READY": 1.10, "WAIT_ROOM_LOAD": 0.8,
                 "WAIT_SEARCH_AGAIN": 1.1, "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0,
-                "WAIT_REFRESH_COOLDOWN": 1.5, "DELAY_POST_POPUP": 0.6, "WAIT_STABILIZE_ANIMATION": 1.2,
+                "WAIT_REFRESH_COOLDOWN": 1.4, "DELAY_POST_POPUP": 0.6, "WAIT_STABILIZE_ANIMATION": 1.2,
+                "TIMEOUT_VERIFY_UI": 1.4,
                 "DURATION_MINS": (60, 180)
             }
         }
@@ -168,6 +172,7 @@ class BotConfiguration:
         self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
         self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
         self.WAIT_STABILIZE_ANIMATION = s["WAIT_STABILIZE_ANIMATION"]
+        self.TIMEOUT_VERIFY_UI = s["TIMEOUT_VERIFY_UI"]
 
 
 def human_delay(profile: Union[float, Tuple[float, float]], fatigue: float = 1.0, safety_factor: float = 0.05) -> None:
@@ -216,7 +221,7 @@ class BBSBot:
         self.consecutive_recovery_count: int = 0
         self.search_start_time: float = 0
         self._force_refresh: bool = False
-        self.next_distraction_run: int = random.randint(*self.config.DISTRACTION_CHANCE)
+        self.next_distraction_run: int = 9999 
         self.snapshot: Optional[Image.Image] = None
         
         self.handlers = {
@@ -346,7 +351,7 @@ class BBSBot:
         # 7. Rapid Verification Window
         if success and verify_key:
             v_start = time.time()
-            while time.time() - v_start < self.config.TIMEOUT_VERIFY_UI:
+            while time.time() - v_start < getattr(self, 'TIMEOUT_VERIFY_UI', self.config.TIMEOUT_VERIFY_UI):
                 found_v = self.find_image(verify_key, confidence=self.config.CONF_VERIFY_ACTION)
                 if (wait_for_appearance and found_v) or (not wait_for_appearance and not found_v):
                     if target_state: self.transition_to(target_state)
@@ -621,9 +626,14 @@ class BBSBot:
         duration = random.randint(*self.config.DISTRACTION_DURATION)
         logger.info(f"DISTRACTION: Resting for {duration}s...")
         time.sleep(duration)
-        self.next_distraction_run = self.run_count + random.randint(*self.config.DISTRACTION_CHANCE)
+        self.next_distraction_run = 9999
         self.quest_watchdog = time.time() 
         self.fatigue_start_time = time.time()
+        
+        self.active_profile = "SHIKAI_MAX"
+        self.config._apply_profile(self.active_profile)
+        self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
+        
         self.transition_to("RECOVERY")
 
     def retire_from_quest(self, haystack: Optional[Image.Image] = None) -> None:
@@ -763,6 +773,7 @@ class BBSBot:
 
     def check_circadian_rhythm(self) -> None:
         if time.time() > self.next_profile_swap:
+            old_profile = self.active_profile
             self.active_profile = "SHIKAI_NORMAL" if self.active_profile == "SHIKAI_MAX" else "SHIKAI_MAX"
             self.config._apply_profile(self.active_profile)
             
@@ -770,6 +781,10 @@ class BBSBot:
             self.next_profile_swap = time.time() + duration_secs
             
             logger.info(f"CIRCADIAN SHIFT: Human focus changed. Entering '{self.active_profile}' for {duration_secs/60:.0f} minutes.")
+            
+            if old_profile == "SHIKAI_MAX" and self.active_profile == "SHIKAI_NORMAL":
+                self.next_distraction_run = self.run_count + random.randint(*self.config.CASUAL_LINGER_RUNS)
+                logger.info(f"FATIGUE: Will take a break after run #{self.next_distraction_run}.")
 
     def run(self, test_restart: bool = False) -> None:
         try:
