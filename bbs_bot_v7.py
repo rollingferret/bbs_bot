@@ -1080,15 +1080,17 @@ class BBSBot:
         try:
             now = time.time()
             if not self.win_id or (now - self._last_id_search > self.config.POLL_PROPERTY_SYNC):
-                wids = subprocess.check_output(["xdotool", "search", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+                wids = subprocess.check_output(["xdotool", "search", "--onlyvisible", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
                 valid_wid = None
                 for wid in wids:
                     try:
                         pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
                         cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
                         if "BleachBraveSouls" in cmd:
-                            valid_wid = wid
-                            break
+                            xprop = subprocess.check_output(["xprop", "-id", wid, "WM_CLASS"], text=True, stderr=subprocess.DEVNULL)
+                            if "steam_app_1201240" in xprop.lower() or "bleach" in xprop.lower():
+                                valid_wid = wid
+                                break
                     except Exception:
                         continue
                 if valid_wid:
