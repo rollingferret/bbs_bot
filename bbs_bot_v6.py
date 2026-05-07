@@ -645,19 +645,6 @@ class BBSBot:
             self.transition_to("READY")
             return
 
-        if getattr(self, "_force_refresh", False):
-            if self.find_image("search_again", haystack=haystack):
-                if self.smart_click(
-                    "search_again",
-                    "recovery refresh",
-                    custom_delay=self.config.DELAY_POST_POPUP,
-                    haystack=haystack,
-                ):
-                    self.search_start_time = time.time()
-                    self._force_refresh = False
-                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
-            return
-
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE:
             logger.warning(
                 f"SCAN_ROOMS: No activity for {self.config.TIMEOUT_SCAN_IDLE}s. Yielding to RECOVERY."
@@ -751,6 +738,21 @@ class BBSBot:
                         time.sleep(self.config.POLL_UI_VERIFY)
                     return  # Attempt finished. Return to fresh loop.
                 return  # Attempt finished. Return to fresh loop.
+
+        # Only reach here if ZERO rooms were found in this snapshot
+        if getattr(self, "_force_refresh", False):
+            if self.find_image("search_again", haystack=haystack):
+                if self.smart_click(
+                    "search_again",
+                    "recovery refresh",
+                    custom_delay=self.config.DELAY_POST_POPUP,
+                    haystack=haystack,
+                ):
+                    self.search_start_time = time.time()
+                    self._force_refresh = False
+                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
+                    return
+            return
 
         if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN:
             # Only search if we actually see the button AND there are no valid rooms to snatch
@@ -1243,9 +1245,17 @@ class BBSBot:
             )
             # Gentle un-minimize check
             try:
-                state = subprocess.check_output(["xprop", "-id", self.win_id, "WM_STATE"], text=True, stderr=subprocess.DEVNULL).lower()
+                state = subprocess.check_output(
+                    ["xprop", "-id", self.win_id, "WM_STATE"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                ).lower()
                 if "iconic" in state:
-                    subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
+                    subprocess.run(
+                        ["xdotool", "windowraise", self.win_id],
+                        check=False,
+                        stderr=subprocess.DEVNULL,
+                    )
             except Exception:
                 pass
 
