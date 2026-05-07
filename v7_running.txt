@@ -1,0 +1,21 @@
+    def handle_running(self, haystack: Optional[Image.Image] = None) -> bool:
+        if self.config.MANAGE_INGAME_AUTO:
+            if not self.find_image(
+                "ingame_auto_on",
+                confidence=self.config.AUTO_ON_CONFIDENCE,
+                haystack=haystack,
+            ):
+                if self.find_image(
+                    "ingame_auto_off",
+                    confidence=self.config.AUTO_MATCH_CONFIDENCE,
+                    haystack=haystack,
+                ):
+                    return self.smart_click(
+                        "ingame_auto_off",
+                        "enable auto",
+                        verify_key="ingame_auto_on",
+                        wait_for_appearance=True,
+                        confidence=self.config.AUTO_MATCH_CONFIDENCE,
+                        haystack=haystack,
+                    )
+

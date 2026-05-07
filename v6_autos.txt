@@ -1,0 +1,51 @@
+        autos = self.find_all(
+            "auto", confidence=self.config.CONF_NORMAL, haystack=haystack
+        )
+        if autos:
+            v_rules = self.find_all(
+                "room_rules_valid", confidence=self.config.CONF_LOOSE, haystack=haystack
+            )
+            valid = BBSBot.match_rooms(autos, v_rules, self.config)
+
+            if valid:
+                # Busy with rooms. Reset the search timer immediately.
+                self.search_start_time = time.time()
+
+            for auto, rule in valid:
+                local_reg = (
+                    auto.left - 5,
+                    auto.top - 5,
+                    auto.width + 10,
+                    auto.height + 10,
+                )
+                if not self.find_image("auto", region=local_reg, haystack=haystack):
+                    logger.warning("Local anchor lost. Room list shifted. Refreshing.")
+                    return
+
+                px, py = (
+                    (auto.left + rule.left + rule.width) // 2,
+                    auto.top + auto.height // 2,
+                )
+                ox, oy = self.config.SNATCH_BOX_OFFSET
+                dw, dh = self.config.SNATCH_BOX_DIM
+                target_box = pyscreeze.Box(px - ox, py - oy, dw, dh)
+
+                if self.smart_click(
+                    target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE
+                ):
+                    # We attempted a snatch. Force a fresh loop to avoid search-spam.
+                    self.search_start_time = time.time()
+                    start_v = time.time()
+                    while time.time() - start_v < self.config.TIMEOUT_LOBBY_JOIN:
+                        if self.find_stable_image(
+                            "ready", confidence=self.config.CONF_READY, frames=3
+                        ):
+                            time.sleep(self.config.DELAY_READY)
+                            if self.smart_click(
+                                "ready",
+                                "snap ready",
+                                verify_key="ready",
+                                custom_delay=self.config.WAIT_LOBBY_READY,
+                                target_state="CHECK_RUN_START",
+                            ):
+                                return
