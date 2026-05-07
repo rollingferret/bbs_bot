@@ -28,20 +28,24 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BotConfiguration:
-    """Centralized configuration for the BBS Bot V6.5 'Snapshot Engine'."""
+    """Centralized configuration for the BBS Bot V6.0 'Snapshot Engine'."""
 
     RAW_TITLE: str = "Bleach: Brave Souls"
+    GAME_WINDOW_TITLE: str = "Bleach: Brave Souls"
 
     # --- Circadian Rhythm Profiles ---
-    CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
+    CIRCADIAN_PROFILES: Dict[str, Dict[str, Any]] = None
 
-    # Current Active Profile (Defaults)
-    DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
+    # Current Active Profile (Defaults initialized in post_init)
+    DELAY_COGNITIVE: Tuple[float, float] = (0.68, 0.05)
     DELAY_SNIPE: float = 0.20
+    DELAY_TRANSITION: float = 0.5
+    DELAY_SOAK: float = 0.2
     DELAY_POPUP: float = 1.5
+    DELAY_TAP: float = 1.5
     DELAY_READY: float = 0.90
-    WAIT_ROOM_LOAD: float = 1.0
-    WAIT_SEARCH_AGAIN: float = 1.0
+    WAIT_ROOM_LOAD: float = 0.6
+    WAIT_SEARCH_AGAIN: float = 0.7
     WAIT_LOBBY_READY: float = 0.3
     WAIT_POST_RETRY: float = 1.0
     WAIT_REFOCUS: float = 0.02
@@ -64,8 +68,10 @@ class BotConfiguration:
     TIMEOUT_VERIFY_UI: float = 0.8
 
     # --- Wait Constants ---
-    WAIT_DISCONNECT_COOLING: Tuple[int, int] = (8, 16)
+    WAIT_RETIRE_STEP: float = 1.0
+    WAIT_DISCONNECT_COOLING: float = 10.0
     WAIT_RESTART: float = 5.0
+    WAIT_STARTUP_STEP: float = 2.0
 
     # --- Vision & Matching ---
     CONF_NORMAL: float = 0.80
@@ -73,10 +79,9 @@ class BotConfiguration:
     CONF_READY: float = 0.95
     CONF_STARTUP: float = 0.85
     CONF_LOOSE: float = 0.70
-    CONF_POPUP: float = 0.90
-    CONF_VERIFY_ACTION: float = 0.80
-    AUTO_MATCH_CONFIDENCE: float = 0.995
-    AUTO_ON_CONFIDENCE: float = 0.85
+    CONF_POPUP: float = 0.80
+    CONF_VERIFY_ACTION: float = 0.80  # Match CONF_NORMAL for consistency
+    AUTO_MATCH_CONFIDENCE: float = 0.92
 
     # --- Matching Algorithm ---
     ROOM_MATCH_WEIGHT: float = 0.1
@@ -87,23 +92,25 @@ class BotConfiguration:
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
 
     # --- Operational Safety ---
-    WINDOW_NOT_FOUND_RETRIES: int = 60  # 6 seconds at 0.1s loop
-    MAX_DISCONNECT_RETRIES: Tuple[int, int] = (8, 16)
+    WINDOW_NOT_FOUND_RETRIES: int = 5
+    MAX_DISCONNECT_RETRIES: int = 3
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
-    POLL_MAIN_LOOP: float = 0.1
+    POLL_MAIN_LOOP: float = 0.05
     POLL_UI_VERIFY: float = 0.05
     POLL_POPUP: float = 0.5
     POLL_RECOVERY: float = 0.5
     POLL_RUNNING: float = 0.5
     POLL_PROPERTY_SYNC: float = 5.0
-
     CASUAL_LINGER_RUNS: Tuple[int, int] = (8, 16)
 
     # --- Behavioral Stealth ---
+    FATIGUE_INCREASE_RATE: float = 0.001
+    MAX_FATIGUE_MODIFIER: float = 1.15
     FATIGUE_BASE: float = 1.0
     FATIGUE_AMPLITUDE: float = 0.15
     FATIGUE_PERIOD: int = 1800
+    DISTRACTION_CHANCE: Tuple[int, int] = (25, 45)
     DISTRACTION_DURATION: Tuple[int, int] = (120, 480)
 
     # --- Technical Flags ---
@@ -111,36 +118,42 @@ class BotConfiguration:
     MANAGE_INGAME_AUTO: bool = True
     USE_WMCTRL_ALWAYS_ON_TOP: bool = True
 
-    TEMPLATES: Optional[Dict[str, str]] = None
+    TEMPLATES: Dict[str, str] = None
 
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
-            "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.78, 0.05),
+            "SHIKAI_MAX": {  # "PRO GAMER": Elite focus, perfect cadence
+                "DELAY_COGNITIVE": (0.68, 0.05),
                 "DELAY_SNIPE": 0.20,
+                "DELAY_TRANSITION": 0.5,
+                "DELAY_SOAK": 0.2,
+                "DELAY_TAP": 1.5,
                 "DELAY_POPUP": 1.5,
                 "DELAY_READY": 0.90,
-                "WAIT_ROOM_LOAD": 1.0,
-                "WAIT_SEARCH_AGAIN": 1.0,
+                "WAIT_ROOM_LOAD": 0.6,
+                "WAIT_SEARCH_AGAIN": 0.7,
                 "WAIT_LOBBY_READY": 0.3,
                 "WAIT_POST_RETRY": 1.0,
-                "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 0.8,
+                "DELAY_POST_POPUP": 0.3,
                 "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8,
                 "DURATION_MINS": (45, 90),
             },
-            "SHIKAI_NORMAL": {
-                "DELAY_COGNITIVE": (0.95, 0.10),
+            "SHIKAI_NORMAL": {  # "CASUAL": Distracted, watching Netflix
+                "DELAY_COGNITIVE": (0.85, 0.10),
                 "DELAY_SNIPE": 0.40,
+                "DELAY_TRANSITION": 1.2,
+                "DELAY_SOAK": 0.4,
+                "DELAY_TAP": 2.5,
                 "DELAY_POPUP": 2.0,
                 "DELAY_READY": 1.10,
-                "WAIT_ROOM_LOAD": 1.2,
-                "WAIT_SEARCH_AGAIN": 1.5,
+                "WAIT_ROOM_LOAD": 0.8,
+                "WAIT_SEARCH_AGAIN": 1.1,
                 "WAIT_LOBBY_READY": 0.6,
                 "WAIT_POST_RETRY": 2.0,
-                "WAIT_REFOCUS": 0.05,
                 "WAIT_REFRESH_COOLDOWN": 1.4,
+                "DELAY_POST_POPUP": 0.6,
                 "WAIT_STABILIZE_ANIMATION": 1.2,
                 "TIMEOUT_VERIFY_UI": 1.4,
                 "DURATION_MINS": (60, 180),
@@ -170,20 +183,23 @@ class BotConfiguration:
             "unavailable_close": "images/unavailable_close.png",
             "disconnect_retry": "images/disconnect_rerty.png",
         }
+
+        # Apply initial profile
         self._apply_profile("SHIKAI_MAX")
 
     def _apply_profile(self, profile_name: str):
-        assert self.CIRCADIAN_PROFILES is not None
         s = self.CIRCADIAN_PROFILES[profile_name]
         self.DELAY_COGNITIVE = s["DELAY_COGNITIVE"]
         self.DELAY_SNIPE = s["DELAY_SNIPE"]
+        self.DELAY_TRANSITION = s["DELAY_TRANSITION"]
+        self.DELAY_SOAK = s["DELAY_SOAK"]
+        self.DELAY_TAP = s["DELAY_TAP"]
         self.DELAY_POPUP = s["DELAY_POPUP"]
         self.DELAY_READY = s["DELAY_READY"]
         self.WAIT_ROOM_LOAD = s["WAIT_ROOM_LOAD"]
         self.WAIT_SEARCH_AGAIN = s["WAIT_SEARCH_AGAIN"]
         self.WAIT_LOBBY_READY = s["WAIT_LOBBY_READY"]
         self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
-        self.WAIT_REFOCUS = s.get("WAIT_REFOCUS", 0.02)
         self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
         self.WAIT_STABILIZE_ANIMATION = s["WAIT_STABILIZE_ANIMATION"]
         self.TIMEOUT_VERIFY_UI = s["TIMEOUT_VERIFY_UI"]
@@ -208,7 +224,8 @@ class GameWindowNotFoundError(Exception):
 
 class BBSBot:
     """
-    Bleach: Brave Souls Autonomous Agent V6.5 'Snapshot Engine'.
+    Bleach: Brave Souls Autonomous Agent V6.0 'Snapshot Engine'.
+    Universal "Check -> Soak -> Click -> Verify" Architecture. Zero xdotool lockups.
     """
 
     RECOVERY_MAP: List[Tuple[str, str]] = [
@@ -232,7 +249,7 @@ class BBSBot:
 
     def __init__(self, config: BotConfiguration = BotConfiguration()) -> None:
         self.config = config
-        assert self.config.CIRCADIAN_PROFILES is not None
+
         self.active_profile: str = "SHIKAI_MAX"
         self.next_profile_swap: float = (
             time.time()
@@ -258,12 +275,6 @@ class BBSBot:
         self._force_refresh: bool = False
         self.next_distraction_run: int = 9999
         self.snapshot: Optional[Image.Image] = None
-        self._last_popup_check: float = 0.0
-        self._last_recovery_log: int = 0
-        self._last_property_sync: float = 0.0
-        self._last_id_search: float = 0.0
-        self._run_counted: bool = False
-        self._startup_window_time: float = time.time()
 
         self.handlers = {
             "MENU": self.handle_menu,
@@ -289,11 +300,9 @@ class BBSBot:
             logger.error("FATAL: X11 Display error.")
             sys.exit(1)
 
-        logger.info("BBS Bot V6.5 'Snapshot Engine' Initialized.")
+        logger.info("BBS Bot V6.0 'Snapshot Engine' Initialized.")
 
     def _load_templates(self) -> None:
-        if not self.config.TEMPLATES:
-            return
         for key, path in self.config.TEMPLATES.items():
             try:
                 self.cached_templates[key] = Image.open(path).convert("RGB")
@@ -307,6 +316,16 @@ class BBSBot:
                 sys.exit(1)
 
     # --- VISION ---
+    def get_ui_region(self, element: str) -> Optional[Tuple[int, int, int, int]]:
+        if not self.region:
+            return None
+        gx, gy, gw, gh = self.region
+        if element == "auto":
+            return (gx + gw // 2, gy + gh // 2, gw // 2, gh // 2)
+        if element == "center_popup":
+            return (gx + gw // 4, gy + gh // 4, gw // 2, gh // 2)
+        return self.region
+
     def find_image(
         self,
         key: str,
@@ -323,17 +342,21 @@ class BBSBot:
         t_start = time.time()
         try:
             if haystack:
-                region_val = self.region
-                if not region_val:
-                    return None
-                h_reg = (reg[0] - region_val[0], reg[1] - region_val[1], reg[2], reg[3])
+                # Map screen region to haystack-relative coordinates
+                h_reg = (
+                    reg[0] - self.region[0],
+                    reg[1] - self.region[1],
+                    reg[2],
+                    reg[3],
+                )
                 res = pyautogui.locate(
                     template, haystack, region=h_reg, confidence=conf
                 )
                 if res:
+                    # Map result back to screen coordinates
                     res = pyscreeze.Box(
-                        res.left + region_val[0],
-                        res.top + region_val[1],
+                        res.left + self.region[0],
+                        res.top + self.region[1],
                         res.width,
                         res.height,
                     )
@@ -376,10 +399,12 @@ class BBSBot:
             return []
         try:
             if haystack:
-                region_val = self.region
-                if not region_val:
-                    return []
-                h_reg = (reg[0] - region_val[0], reg[1] - region_val[1], reg[2], reg[3])
+                h_reg = (
+                    reg[0] - self.region[0],
+                    reg[1] - self.region[1],
+                    reg[2],
+                    reg[3],
+                )
                 res = list(
                     pyautogui.locateAll(
                         template, haystack, region=h_reg, confidence=confidence
@@ -387,7 +412,10 @@ class BBSBot:
                 )
                 return [
                     pyscreeze.Box(
-                        r.left + region_val[0], r.top + region_val[1], r.width, r.height
+                        r.left + self.region[0],
+                        r.top + self.region[1],
+                        r.width,
+                        r.height,
                     )
                     for r in res
                 ]
@@ -415,18 +443,10 @@ class BBSBot:
         confidence: Optional[float] = None,
         region: Optional[Tuple[int, int, int, int]] = None,
         haystack: Optional[Image.Image] = None,
-        verify_timeout: Optional[float] = None,
     ) -> bool:
-        # 1. Human Cognitive Pacing
-        human_delay(
-            custom_delay or self.config.DELAY_COGNITIVE,
-            self.fatigue_modifier,
-            self.config.SAFETY_FLOOR_FACTOR,
-        )
-
         conf = confidence or self.config.CONF_NORMAL
 
-        # 2. Locate Target
+        # 1. Locate Target
         box = (
             target
             if isinstance(target, pyscreeze.Box)
@@ -441,6 +461,13 @@ class BBSBot:
                 return True
             return False
 
+        # 2. Human Cognitive Pacing
+        human_delay(
+            custom_delay or self.config.DELAY_COGNITIVE,
+            self.fatigue_modifier,
+            self.config.SAFETY_FLOOR_FACTOR,
+        )
+
         # 3. Gaussian Click Calculation
         mu_x, mu_y = box.left + box.width / 2, box.top + box.height / 2
         sigma_x, sigma_y = (
@@ -454,7 +481,7 @@ class BBSBot:
         click_x = max(box.left, min(click_x, box.left + box.width - 1))
         click_y = max(box.top, min(click_y, box.top + box.height - 1))
 
-        # 4. Focus Capture (Overnight secret)
+        # 4. Focus Capture
         current_focus = None
         try:
             current_focus = subprocess.check_output(
@@ -469,16 +496,13 @@ class BBSBot:
             f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})"
         )
 
-        # 6. Authoritative Refocus (Restored overnight secret)
+        # 6. Unconditional Refocus
         if success and current_focus:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
-                # Optimized sequence: focus first, then activate to reduce OS-level flicker
                 subprocess.run(
                     [
                         "xdotool",
-                        "windowfocus",
-                        current_focus,
                         "windowactivate",
                         "--sync",
                         current_focus,
@@ -494,12 +518,9 @@ class BBSBot:
         # 7. Rapid Verification Window
         if success and verify_key:
             v_start = time.time()
-            limit_val = (
-                verify_timeout
-                if verify_timeout is not None
-                else self.config.TIMEOUT_VERIFY_UI
-            )
-            while time.time() - v_start < limit_val:
+            while time.time() - v_start < getattr(
+                self, "TIMEOUT_VERIFY_UI", self.config.TIMEOUT_VERIFY_UI
+            ):
                 found_v = self.find_image(
                     verify_key, confidence=self.config.CONF_VERIFY_ACTION
                 )
@@ -512,14 +533,14 @@ class BBSBot:
                 time.sleep(self.config.POLL_UI_VERIFY)
             return False
 
+        # 8. Instant Transition
         if success and target_state:
             self.transition_to(target_state)
         return True
 
     def _send_x11_click(self, x: int, y: int) -> bool:
+        """Pure headless X11 click. No window manager interference."""
         try:
-            if not self.win_id:
-                return False
             window = self.disp.create_resource_object("window", int(self.win_id))
             geom = window.get_geometry()
             rel_x, rel_y = x - geom.x, y - geom.y
@@ -547,6 +568,8 @@ class BBSBot:
     # --- PROCEDURAL HANDLERS ---
     def handle_global_popups(self, haystack: Optional[Image.Image] = None) -> bool:
         now = time.time()
+        if not hasattr(self, "_last_popup_check"):
+            self._last_popup_check = 0
         if now - self._last_popup_check < self.config.POLL_POPUP:
             return False
         self._last_popup_check = now
@@ -561,12 +584,21 @@ class BBSBot:
         ]
         for key in popups:
             conf = 0.99 if key == "disconnect_retry" else self.config.CONF_POPUP
-            if self.find_image(key, confidence=conf, haystack=haystack):
+            reg = self.region
+            if key in [
+                "okay",
+                "closed_room_coop_quest_menu",
+                "disconnect_retry",
+                "close",
+                "unavailable_close",
+            ]:
+                reg = self.get_ui_region("center_popup")
+
+            if self.find_image(key, confidence=conf, region=reg, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
                 if key == "disconnect_retry":
                     self.disconnect_retry_count += 1
-                    limit = random.randint(*self.config.MAX_DISCONNECT_RETRIES)
-                    if self.disconnect_retry_count > limit:
+                    if self.disconnect_retry_count > self.config.MAX_DISCONNECT_RETRIES:
                         self.recover_game()
                         return True
 
@@ -576,10 +608,11 @@ class BBSBot:
                     verify_key=key,
                     custom_delay=self.config.DELAY_POPUP,
                     confidence=conf,
+                    region=reg,
                     haystack=haystack,
                 )
                 if key == "disconnect_retry":
-                    time.sleep(random.randint(*self.config.WAIT_DISCONNECT_COOLING))
+                    time.sleep(self.config.WAIT_DISCONNECT_COOLING)
                 else:
                     human_delay(
                         self.config.DELAY_POPUP,
@@ -645,6 +678,19 @@ class BBSBot:
             self.transition_to("READY")
             return
 
+        if getattr(self, "_force_refresh", False):
+            if self.find_image("search_again", haystack=haystack):
+                if self.smart_click(
+                    "search_again",
+                    "recovery refresh",
+                    custom_delay=self.config.DELAY_POST_POPUP,
+                    haystack=haystack,
+                ):
+                    self.search_start_time = time.time()
+                    self._force_refresh = False
+                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
+            return
+
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE:
             logger.warning(
                 f"SCAN_ROOMS: No activity for {self.config.TIMEOUT_SCAN_IDLE}s. Yielding to RECOVERY."
@@ -660,10 +706,6 @@ class BBSBot:
                 "room_rules_valid", confidence=self.config.CONF_LOOSE, haystack=haystack
             )
             valid = BBSBot.match_rooms(autos, v_rules, self.config)
-
-            if valid:
-                # Busy with rooms. Reset the search timer immediately.
-                self.search_start_time = time.time()
 
             for auto, rule in valid:
                 local_reg = (
@@ -687,8 +729,6 @@ class BBSBot:
                 if self.smart_click(
                     target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE
                 ):
-                    # We attempted a snatch. Force a fresh loop to avoid search-spam.
-                    self.search_start_time = time.time()
                     start_v = time.time()
                     while time.time() - start_v < self.config.TIMEOUT_LOBBY_JOIN:
                         if self.find_stable_image(
@@ -704,6 +744,7 @@ class BBSBot:
                             ):
                                 return
                             return
+
                         if self.find_image(
                             "closed_room_coop_quest_menu",
                             confidence=self.config.CONF_NORMAL,
@@ -732,27 +773,15 @@ class BBSBot:
                             ):
                                 logger.info("Room unavailable. Refreshing list.")
                                 self._force_refresh = True
-                                self.search_start_time = time.time()
                                 return
 
                         time.sleep(self.config.POLL_UI_VERIFY)
-                    return  # Attempt finished. Return to fresh loop.
-                return  # Attempt finished. Return to fresh loop.
 
-        # Only reach here if ZERO rooms were found in this snapshot
-        if getattr(self, "_force_refresh", False):
+        if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN:
             if self.find_image("search_again", haystack=haystack):
-                if self.smart_click(
-                    "search_again",
-                    "recovery refresh",
-                    custom_delay=self.config.DELAY_POST_POPUP,
-                    haystack=haystack,
-                ):
+                if self.smart_click("search_again", "search again", haystack=haystack):
                     self.search_start_time = time.time()
-                    self._force_refresh = False
                     time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
-                    return
-            return
 
     @staticmethod
     def match_rooms(
@@ -776,7 +805,7 @@ class BBSBot:
     def dedupe_autos(
         matches: List[pyscreeze.Box], config: BotConfiguration
     ) -> List[pyscreeze.Box]:
-        unique: List[pyscreeze.Box] = []
+        unique = []
         for m in matches:
             cx, cy = m.left + m.width // 2, m.top + m.height // 2
             if not any(
@@ -859,9 +888,7 @@ class BBSBot:
             return
 
         if self.find_image(
-            "ingame_auto_on",
-            confidence=self.config.AUTO_ON_CONFIDENCE,
-            haystack=haystack,
+            "ingame_auto_on", confidence=self.config.CONF_HIGH, haystack=haystack
         ):
             self.transition_to("RUNNING")
             return
@@ -890,24 +917,18 @@ class BBSBot:
 
     def handle_running(self, haystack: Optional[Image.Image] = None) -> None:
         if self.config.MANAGE_INGAME_AUTO:
-            if not self.find_image(
-                "ingame_auto_on",
-                confidence=self.config.AUTO_ON_CONFIDENCE,
+            if self.find_image(
+                "ingame_auto_off",
+                confidence=self.config.AUTO_MATCH_CONFIDENCE,
                 haystack=haystack,
             ):
-                if self.find_image(
+                self.smart_click(
                     "ingame_auto_off",
+                    "enable auto",
+                    verify_key="ingame_auto_on",
+                    wait_for_appearance=True,
                     confidence=self.config.AUTO_MATCH_CONFIDENCE,
-                    haystack=haystack,
-                ):
-                    self.smart_click(
-                        "ingame_auto_off",
-                        "enable auto",
-                        verify_key="ingame_auto_on",
-                        wait_for_appearance=True,
-                        confidence=self.config.AUTO_MATCH_CONFIDENCE,
-                        haystack=haystack,
-                    )
+                )
 
         if self.find_image("tap1", haystack=haystack):
             self.transition_to("FINISH")
@@ -917,41 +938,29 @@ class BBSBot:
         time.sleep(self.config.POLL_RUNNING)
 
     def handle_finish(self, haystack: Optional[Image.Image] = None) -> None:
-        found_key = None
-        for key in ["tap1", "tap2", "retry"]:
-            if self.find_image(key, haystack=haystack):
-                found_key = key
-                break
-
-        if found_key:
-            if not self._run_counted:
+        if self.find_image("tap1", haystack=haystack):
+            if self.smart_click("tap1", "reward tap1"):
+                time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
+                self.quest_watchdog = time.time()
+            return
+        if self.find_image("tap2", haystack=haystack):
+            if self.smart_click("tap2", "reward tap2"):
+                time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
+                self.quest_watchdog = time.time()
+            return
+        if self.find_image("retry", haystack=haystack):
+            if self.smart_click("retry", "retry quest", verify_key="retry"):
                 self.run_count += 1
-                self._run_counted = True
-                logger.info(f"RUN COMPLETE: Total runs recorded: {self.run_count}")
-
-            if found_key in ["tap1", "tap2"]:
-                if self.smart_click(found_key, f"reward {found_key}"):
-                    time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
-                    self.quest_watchdog = time.time()
-                return
-
-            if found_key == "retry":
-                if self.smart_click(
-                    "retry",
-                    "retry quest",
-                    verify_key="retry",
-                    verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD,
-                ):
-                    self.consecutive_recovery_count = 0
-                    self.quest_watchdog = time.time()
-                    logger.info(f"Next distraction at run {self.next_distraction_run}.")
-                    time.sleep(self.config.WAIT_POST_RETRY)
-                    if self.run_count >= self.next_distraction_run:
-                        self.transition_to("DISTRACTION")
-                        return
-                    self.transition_to("ENTER_ROOM_LIST")
+                self.consecutive_recovery_count = 0
+                logger.info(
+                    f"Run #{self.run_count} complete. Next distraction at run {self.next_distraction_run}."
+                )
+                time.sleep(self.config.WAIT_POST_RETRY)
+                if self.run_count >= self.next_distraction_run:
+                    self.transition_to("DISTRACTION")
                     return
-
+                self.transition_to("ENTER_ROOM_LIST")
+                return
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
             self.transition_to("RECOVERY")
 
@@ -973,7 +982,7 @@ class BBSBot:
                 )
                 return
 
-        window_age = time.time() - self._startup_window_time
+        window_age = time.time() - getattr(self, "_startup_window_time", time.time())
         if window_age > 2.0 and (
             self.find_image(
                 "coop_quest", confidence=self.config.CONF_HIGH, haystack=haystack
@@ -988,7 +997,10 @@ class BBSBot:
     def handle_recovery(self, haystack: Optional[Image.Image] = None) -> None:
         elapsed = time.time() - self.last_state_change_time
         if int(elapsed) > 0 and int(elapsed) % 10 == 0:
-            if int(elapsed) != self._last_recovery_log:
+            if (
+                not hasattr(self, "_last_recovery_log")
+                or int(elapsed) != self._last_recovery_log
+            ):
                 logger.info(
                     f"RECOVERY: Still searching for anchors... ({elapsed:.0f}s elapsed)"
                 )
@@ -1009,9 +1021,9 @@ class BBSBot:
         self.next_distraction_run = 9999
         self.quest_watchdog = time.time()
         self.fatigue_start_time = time.time()
+
         self.active_profile = "SHIKAI_MAX"
         self.config._apply_profile(self.active_profile)
-        assert self.config.CIRCADIAN_PROFILES is not None
         self.next_profile_swap = (
             time.time()
             + random.randint(
@@ -1019,6 +1031,7 @@ class BBSBot:
             )
             * 60
         )
+
         self.transition_to("RECOVERY")
 
     def retire_from_quest(self, haystack: Optional[Image.Image] = None) -> None:
@@ -1033,10 +1046,9 @@ class BBSBot:
 
     def recover_game(self) -> None:
         self.consecutive_recovery_count += 1
-        self.disconnect_retry_count = 0
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES:
             logger.error(
-                f"FATAL: Exceeded {self.config.MAX_CONSECUTIVE_RECOVERIES} consecutive recoveries."
+                f"FATAL: Exceeded {self.config.MAX_CONSECUTIVE_RECOVERIES} consecutive recoveries. Game is permanently stuck or crashing."
             )
             sys.exit(1)
 
@@ -1078,17 +1090,19 @@ class BBSBot:
                 time.sleep(self.config.WAIT_RESTART)
 
         if not window_found:
-            logger.error("Failed to find game window after restart.")
+            logger.error(
+                "Failed to find game window after restart. Exiting to prevent loop."
+            )
             sys.exit(1)
 
         self._startup_window_time = time.time()
         self.transition_to("GAME_STARTUP")
 
     def save_debug_screenshot(self, name: str) -> None:
-        if not self.config.TAKE_DEBUG_SCREENSHOTS or not self.region:
+        if not self.config.TAKE_DEBUG_SCREENSHOTS:
             return
         try:
-            ts = int(time.time())
+            ts = time.strftime("%Y%m%d_%H%M%S")
             fname = f"screenshots/debug_{self.state}_{name}_{ts}.png"
             pyautogui.screenshot(fname, region=self.region)
             self._cleanup_screenshots()
@@ -1109,25 +1123,21 @@ class BBSBot:
         except Exception:
             pass
 
-    def transition_to(self, state: str) -> None:
+    def transition_to(self, state: str):
         if self.state != state:
             logger.info(f"TRANSITION [Run:{self.run_count}]: {self.state} -> {state}")
             self.save_debug_screenshot(f"to_{state}")
-            self.state = state
+            self.prev_state, self.state = self.state, state
             self.last_state_change_time = time.time()
-            self._force_refresh = False
-
-            if state in ["MENU", "READY", "CHECK_RUN_START", "ENTER_ROOM_LIST"]:
-                self._run_counted = False
-
-            if state in ["READY", "CHECK_RUN_START"]:
-                self.disconnect_retry_count = 0
-
+            self.disconnect_retry_count = 0
+            self._force_refresh = False  # Reset on any major state shift
             if state == "SCAN_ROOMS":
                 self.search_start_time = time.time()
             if state == "MENU":
                 self.quest_watchdog = time.time()
-                self.consecutive_recovery_count = 0
+                self.consecutive_recovery_count = (
+                    0  # Success: Reaching menu proves recovery worked
+                )
 
     def update_fatigue(self) -> None:
         elapsed = time.time() - self.fatigue_start_time
@@ -1151,15 +1161,21 @@ class BBSBot:
 
     def ensure_window_ready(self) -> None:
         try:
+            old_wid = self.win_id
             self.get_game_region()
             self.window_not_found_count = 0
+
+            now = time.time()
+            if not hasattr(self, "_last_property_sync"):
+                self._last_property_sync = 0
+            if (
+                self.win_id != old_wid
+                or now - getattr(self, "_last_property_sync", 0)
+                > self.config.POLL_PROPERTY_SYNC
+            ):
+                self.setup_window_properties()
+                self._last_property_sync = now
         except Exception:
-            if self.win_id or self.region:
-                logger.warning(
-                    "VISION: Game window lost or hidden. Clearing region state."
-                )
-            self.win_id = None
-            self.region = None
             self.window_not_found_count += 1
             if self.window_not_found_count >= self.config.WINDOW_NOT_FOUND_RETRIES:
                 self.recover_game()
@@ -1167,48 +1183,52 @@ class BBSBot:
 
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
-            now = time.time()
-            # 1. Authoritative ID Search (Throttled to 5s) - Find window even if hidden
-            if not self.win_id or (
-                now - self._last_id_search > self.config.POLL_PROPERTY_SYNC
-            ):
-                wids = (
-                    subprocess.check_output(
-                        ["xdotool", "search", "--name", self.config.RAW_TITLE],
+            wids = (
+                subprocess.check_output(
+                    [
+                        "xdotool",
+                        "search",
+                        "--onlyvisible",
+                        "--name",
+                        self.config.RAW_TITLE,
+                    ],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                )
+                .strip()
+                .split()
+            )
+            valid_wid = None
+            for wid in wids:
+                try:
+                    pid = subprocess.check_output(
+                        ["xdotool", "getwindowpid", wid],
                         text=True,
                         stderr=subprocess.DEVNULL,
-                    )
-                    .strip()
-                    .split()
-                )
-                valid_wid = None
-                for wid in wids:
-                    try:
-                        pid = subprocess.check_output(
-                            ["xdotool", "getwindowpid", wid],
+                    ).strip()
+                    cmd = subprocess.check_output(
+                        ["ps", "-p", pid, "-o", "cmd", "--no-headers"],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    ).strip()
+                    if "BleachBraveSouls" in cmd:
+                        xprop = subprocess.check_output(
+                            ["xprop", "-id", wid, "WM_CLASS"],
                             text=True,
                             stderr=subprocess.DEVNULL,
-                        ).strip()
-                        cmd = subprocess.check_output(
-                            ["ps", "-p", pid, "-o", "cmd", "--no-headers"],
-                            text=True,
-                            stderr=subprocess.DEVNULL,
-                        ).strip()
-                        if "BleachBraveSouls" in cmd:
+                        )
+                        if (
+                            "steam_app_1201240" in xprop.lower()
+                            or "bleach" in xprop.lower()
+                        ):
                             valid_wid = wid
                             break
-                    except Exception:
-                        continue
-                if valid_wid:
-                    self.win_id = valid_wid
-                self._last_id_search = now
-
-            if not self.win_id:
+                except Exception:
+                    continue
+            if not valid_wid:
                 raise GameWindowNotFoundError()
-
-            # 2. Real-time Geometry Sync (Happens every 0.1s loop)
             geo_lines = subprocess.check_output(
-                ["xdotool", "getwindowgeometry", "--shell", self.win_id],
+                ["xdotool", "getwindowgeometry", "--shell", valid_wid],
                 text=True,
                 stderr=subprocess.DEVNULL,
             ).splitlines()
@@ -1216,50 +1236,32 @@ class BBSBot:
                 k: int(v)
                 for k, v in (line.split("=") for line in geo_lines if "=" in line)
             }
+            self.win_id = valid_wid
             sw, sh = pyautogui.size()
-
-            gx, gy, gw, gh = geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
-            rx, ry = max(0, gx), max(0, gy)
-            rw, rh = min(gw - (rx - gx), sw - rx), min(gh - (ry - gy), sh - ry)
-
-            self.region = (rx, ry, rw, rh)
+            self.region = (
+                max(0, geo["X"]),
+                max(0, geo["Y"]),
+                min(geo["WIDTH"], sw - geo["X"]),
+                min(geo["HEIGHT"], sh - geo["Y"]),
+            )
             return self.region
         except Exception as e:
             raise GameWindowNotFoundError(e)
 
     def setup_window_properties(self) -> None:
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
-            # Force sticky and above (Passive Restoration)
+            # Targeted by unique ID (-i) to prevent conflicts with Browser/YouTube content
             subprocess.run(
                 ["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"],
                 check=False,
                 stderr=subprocess.DEVNULL,
             )
-            # Gentle un-minimize check
-            try:
-                state = subprocess.check_output(
-                    ["xprop", "-id", self.win_id, "WM_STATE"],
-                    text=True,
-                    stderr=subprocess.DEVNULL,
-                ).lower()
-                if "iconic" in state:
-                    subprocess.run(
-                        ["xdotool", "windowraise", self.win_id],
-                        check=False,
-                        stderr=subprocess.DEVNULL,
-                    )
-            except Exception:
-                pass
 
     def log_session_summary(self) -> None:
         elapsed = time.time() - self.start_time
-        avg_run = (elapsed / 60.0) / self.run_count if self.run_count > 0 else 0.0
-        logger.info("--- SESSION SUMMARY ---")
-        logger.info(f"Total Time: {elapsed / 3600:.2f}h")
-        logger.info(f"Total Runs: {self.run_count}")
-        logger.info(f"Avg Time/Run: {avg_run:.2f} mins")
-        logger.info(f"Disconnects: {self.disconnect_retry_count}")
-        logger.info("-----------------------")
+        logger.info(
+            f"--- SESSION SUMMARY: {elapsed / 3600:.2f}h | {self.run_count} runs ---"
+        )
 
     def check_circadian_rhythm(self) -> None:
         if time.time() > self.next_profile_swap:
@@ -1268,7 +1270,7 @@ class BBSBot:
                 "SHIKAI_NORMAL" if self.active_profile == "SHIKAI_MAX" else "SHIKAI_MAX"
             )
             self.config._apply_profile(self.active_profile)
-            assert self.config.CIRCADIAN_PROFILES is not None
+
             duration_secs = (
                 random.randint(
                     *self.config.CIRCADIAN_PROFILES[self.active_profile][
@@ -1278,14 +1280,18 @@ class BBSBot:
                 * 60
             )
             self.next_profile_swap = time.time() + duration_secs
+
             logger.info(
-                f"CIRCADIAN SHIFT: {self.active_profile} for {duration_secs / 60:.0f} mins."
+                f"CIRCADIAN SHIFT: Human focus changed. Entering '{self.active_profile}' for {duration_secs / 60:.0f} minutes."
             )
+
             if old_profile == "SHIKAI_MAX" and self.active_profile == "SHIKAI_NORMAL":
                 self.next_distraction_run = self.run_count + random.randint(
                     *self.config.CASUAL_LINGER_RUNS
                 )
-                logger.info(f"FATIGUE: Break after run #{self.next_distraction_run}.")
+                logger.info(
+                    f"FATIGUE: Will take a break after run #{self.next_distraction_run}."
+                )
 
     def run(self, test_restart: bool = False) -> None:
         try:
@@ -1299,19 +1305,12 @@ class BBSBot:
         while True:
             self.ensure_window_ready()
 
-            # Periodic Property Sync (Shield) - Passive state enforcement
-            now = time.time()
-            if now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC:
-                self.setup_window_properties()
-                self._last_property_sync = now
-
-            if self.region:
-                try:
-                    self.snapshot = pyautogui.screenshot(region=self.region)
-                except Exception:
-                    self.snapshot = None
-            else:
+            # Snapshot Architecture: Single Capture per loop
+            try:
+                self.snapshot = pyautogui.screenshot(region=self.region)
+            except Exception:
                 self.snapshot = None
+
             self.update_fatigue()
             self.check_circadian_rhythm()
             self.check_session_limit()
@@ -1336,14 +1335,23 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-restart", action="store_true")
     parser.add_argument("--debug-screenshots", action="store_true")
-    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Monitor screen and log actions without clicking",
+    )
     args = parser.parse_args()
     bot = BBSBot()
     if args.debug_screenshots:
         bot.config.TAKE_DEBUG_SCREENSHOTS = True
     if args.dry_run:
-        logger.info("DRY RUN ENABLED.")
-        bot._send_x11_click = lambda x, y: (logger.info(f"Click ({x}, {y})"), True)[1]  # type: ignore
+        logger.info("DRY RUN MODE ENABLED: No clicks will be performed.")
+        # Patch the click method to be a no-op
+        bot._send_x11_click = lambda x, y: (
+            logger.info(f"[DRY RUN] Would click at ({x}, {y})"),
+            True,
+        )[1]
+
     try:
         bot.run(test_restart=args.test_restart)
     except KeyboardInterrupt:

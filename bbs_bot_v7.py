@@ -592,9 +592,9 @@ class BBSBot:
                 return True
         return False
 
-    def handle_menu(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_menu(self, haystack: Optional[Image.Image] = None) -> bool:
         if self.find_image("open_coop_quest", haystack=haystack):
-            self.smart_click(
+            return self.smart_click(
                 "open_coop_quest",
                 "specific quest",
                 "enter_room_button",
@@ -602,55 +602,56 @@ class BBSBot:
                 wait_for_appearance=True,
                 haystack=haystack,
             )
-            return
 
         if self.find_image("coop_quest", haystack=haystack):
-            self.smart_click(
+            return self.smart_click(
                 "coop_quest",
                 "expand menu",
                 "open_coop_quest",
                 wait_for_appearance=True,
                 haystack=haystack,
             )
-            return
 
         if self.find_image("enter_room_button", haystack=haystack):
             self.transition_to("ENTER_ROOM_LIST")
-            return
+            return False
 
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_EXPAND:
             self.transition_to("RECOVERY")
+            return False
+        
+        return False
 
-    def handle_enter_room_list(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_enter_room_list(self, haystack: Optional[Image.Image] = None) -> bool:
+        # Atomic check: if we already see rooms, transition and move on.
+        if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
+             self.transition_to("SCAN_ROOMS")
+             return False
+
         if self.find_image("enter_room_button", haystack=haystack):
-            if self.smart_click(
+            return self.smart_click(
                 "enter_room_button", "enter room list", haystack=haystack
-            ):
-                start_load = time.time()
-                while time.time() - start_load < self.config.TIMEOUT_ROOM_LIST_LOAD:
-                    if self.find_image("auto") or self.find_image("search_again"):
-                        time.sleep(self.config.WAIT_ROOM_LOAD)
-                        self.transition_to("SCAN_ROOMS")
-                        return
-                    time.sleep(self.config.POLL_UI_VERIFY)
-                logger.warning("Failed to verify room list load. Re-evaluating state.")
-                return
+            )
 
-        self.transition_to("RECOVERY")
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_ROOM_LIST_LOAD:
+            self.transition_to("RECOVERY")
+            return False
 
-    def handle_scan_rooms(self, haystack: Optional[Image.Image] = None) -> None:
+        return False
+
+    def handle_scan_rooms(self, haystack: Optional[Image.Image] = None) -> bool:
         if self.find_image(
             "ready", confidence=self.config.CONF_READY, haystack=haystack
         ):
             self.transition_to("READY")
-            return
+            return False
 
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE:
             logger.warning(
                 f"SCAN_ROOMS: No activity for {self.config.TIMEOUT_SCAN_IDLE}s. Yielding to RECOVERY."
             )
             self.transition_to("RECOVERY")
-            return
+            return False
 
         autos = self.find_all(
             "auto", confidence=self.config.CONF_NORMAL, haystack=haystack
@@ -674,7 +675,7 @@ class BBSBot:
                 )
                 if not self.find_image("auto", region=local_reg, haystack=haystack):
                     logger.warning("Local anchor lost. Room list shifted. Refreshing.")
-                    return
+                    return False
 
                 px, py = (
                     (auto.left + rule.left + rule.width) // 2,
@@ -687,57 +688,11 @@ class BBSBot:
                 if self.smart_click(
                     target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE
                 ):
-                    # We attempted a snatch. Force a fresh loop to avoid search-spam.
+                    # Atomic Action: Snatch and Return.
+                    # The next heartbeat will discover if we reached the lobby.
                     self.search_start_time = time.time()
-                    start_v = time.time()
-                    while time.time() - start_v < self.config.TIMEOUT_LOBBY_JOIN:
-                        if self.find_stable_image(
-                            "ready", confidence=self.config.CONF_READY, frames=3
-                        ):
-                            time.sleep(self.config.DELAY_READY)
-                            if self.smart_click(
-                                "ready",
-                                "snap ready",
-                                verify_key="ready",
-                                custom_delay=self.config.WAIT_LOBBY_READY,
-                                target_state="CHECK_RUN_START",
-                            ):
-                                return
-                            return
-                        if self.find_image(
-                            "closed_room_coop_quest_menu",
-                            confidence=self.config.CONF_NORMAL,
-                        ):
-                            if self.smart_click(
-                                "closed_room_coop_quest_menu",
-                                "close room full",
-                                verify_key="closed_room_coop_quest_menu",
-                            ):
-                                logger.info("Room full. Kicked to menu. Detouring.")
-                                self.transition_to("MENU")
-                                return
-
-                        if self.find_image(
-                            "close", confidence=self.config.CONF_NORMAL
-                        ) or self.find_image(
-                            "unavailable_close", confidence=self.config.CONF_NORMAL
-                        ):
-                            key = (
-                                "close"
-                                if self.find_image("close")
-                                else "unavailable_close"
-                            )
-                            if self.smart_click(
-                                key, "close unavailable", verify_key=key
-                            ):
-                                logger.info("Room unavailable. Refreshing list.")
-                                self._force_refresh = True
-                                self.search_start_time = time.time()
-                                return
-
-                        time.sleep(self.config.POLL_UI_VERIFY)
-                    return  # Attempt finished. Return to fresh loop.
-                return  # Attempt finished. Return to fresh loop.
+                    return True
+                return False
 
         # Only reach here if ZERO rooms were found in this snapshot
         if getattr(self, "_force_refresh", False):
@@ -750,9 +705,21 @@ class BBSBot:
                 ):
                     self.search_start_time = time.time()
                     self._force_refresh = False
-                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
-                    return
-            return
+                    return True
+            return False
+
+        # Periodic Search Again
+        if self.find_image("search_again", haystack=haystack):
+            if self.smart_click(
+                "search_again",
+                "search again",
+                custom_delay=self.config.WAIT_SEARCH_AGAIN,
+                haystack=haystack,
+            ):
+                self.search_start_time = time.time()
+                return True
+
+        return False
 
     @staticmethod
     def match_rooms(
@@ -791,7 +758,7 @@ class BBSBot:
                 unique.append(m)
         return unique
 
-    def handle_ready(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_ready(self, haystack: Optional[Image.Image] = None) -> bool:
         if self.find_image(
             "closed_room_coop_quest_menu",
             confidence=self.config.CONF_NORMAL,
@@ -801,7 +768,7 @@ class BBSBot:
                 "closed_room_coop_quest_menu", "room closed by host", haystack=haystack
             ):
                 self.transition_to("MENU")
-                return
+                return True
 
         if self.find_image(
             "close", confidence=self.config.CONF_NORMAL, haystack=haystack
@@ -815,10 +782,10 @@ class BBSBot:
             )
             if self.smart_click(key, "lobby disconnect", haystack=haystack):
                 self.transition_to("MENU")
-                return
+                return True
 
-        if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
-            time.sleep(self.config.DELAY_READY)
+        if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack):
+            # Atomic ready click.
             if self.smart_click(
                 "ready",
                 "ready button",
@@ -826,7 +793,7 @@ class BBSBot:
                 target_state="CHECK_RUN_START",
                 haystack=haystack,
             ):
-                return
+                return True
         else:
             if (
                 self.find_image("ingame_auto_off", haystack=haystack)
@@ -834,11 +801,15 @@ class BBSBot:
                 or self.find_image("retire", haystack=haystack)
             ):
                 self.transition_to("CHECK_RUN_START")
-                return
+                return False
+
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_READY:
             self.transition_to("RECOVERY")
+            return False
+            
+        return False
 
-    def handle_check_run_start(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_check_run_start(self, haystack: Optional[Image.Image] = None) -> bool:
         if self.find_image(
             "closed_room_coop_quest_menu",
             confidence=self.config.CONF_NORMAL,
@@ -850,13 +821,13 @@ class BBSBot:
                 haystack=haystack,
             ):
                 self.transition_to("MENU")
-                return
+                return True
 
         if self.find_image(
             "ready", confidence=self.config.CONF_READY, haystack=haystack
         ):
             self.transition_to("READY")
-            return
+            return False
 
         if self.find_image(
             "ingame_auto_on",
@@ -864,7 +835,7 @@ class BBSBot:
             haystack=haystack,
         ):
             self.transition_to("RUNNING")
-            return
+            return False
 
         if self.find_image(
             "ingame_auto_off",
@@ -872,7 +843,7 @@ class BBSBot:
             haystack=haystack,
         ):
             if self.config.MANAGE_INGAME_AUTO:
-                if self.smart_click(
+                return self.smart_click(
                     "ingame_auto_off",
                     "enable auto",
                     verify_key="ingame_auto_on",
@@ -880,15 +851,18 @@ class BBSBot:
                     wait_for_appearance=True,
                     confidence=self.config.AUTO_MATCH_CONFIDENCE,
                     haystack=haystack,
-                ):
-                    return
-            self.transition_to("RUNNING")
-            return
+                )
+            else:
+                self.transition_to("RUNNING")
+                return False
 
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START:
-            self.retire_from_quest()
+            self.retire_from_quest(haystack)
+            return True
 
-    def handle_running(self, haystack: Optional[Image.Image] = None) -> None:
+        return False
+
+    def handle_running(self, haystack: Optional[Image.Image] = None) -> bool:
         if self.config.MANAGE_INGAME_AUTO:
             if not self.find_image(
                 "ingame_auto_on",
@@ -900,7 +874,7 @@ class BBSBot:
                     confidence=self.config.AUTO_MATCH_CONFIDENCE,
                     haystack=haystack,
                 ):
-                    self.smart_click(
+                    return self.smart_click(
                         "ingame_auto_off",
                         "enable auto",
                         verify_key="ingame_auto_on",
@@ -911,12 +885,15 @@ class BBSBot:
 
         if self.find_image("tap1", haystack=haystack):
             self.transition_to("FINISH")
-            return
+            return False
+        
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_QUEST_MAX:
             self.transition_to("RECOVERY")
-        time.sleep(self.config.POLL_RUNNING)
+            return False
+            
+        return False
 
-    def handle_finish(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_finish(self, haystack: Optional[Image.Image] = None) -> bool:
         found_key = None
         for key in ["tap1", "tap2", "retry"]:
             if self.find_image(key, haystack=haystack):
@@ -930,10 +907,7 @@ class BBSBot:
                 logger.info(f"RUN COMPLETE: Total runs recorded: {self.run_count}")
 
             if found_key in ["tap1", "tap2"]:
-                if self.smart_click(found_key, f"reward {found_key}"):
-                    time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
-                    self.quest_watchdog = time.time()
-                return
+                return self.smart_click(found_key, f"reward {found_key}", haystack=haystack)
 
             if found_key == "retry":
                 if self.smart_click(
@@ -941,21 +915,20 @@ class BBSBot:
                     "retry quest",
                     verify_key="retry",
                     verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD,
+                    haystack=haystack,
                 ):
                     self.consecutive_recovery_count = 0
-                    self.quest_watchdog = time.time()
                     logger.info(f"Next distraction at run {self.next_distraction_run}.")
-                    time.sleep(self.config.WAIT_POST_RETRY)
-                    if self.run_count >= self.next_distraction_run:
-                        self.transition_to("DISTRACTION")
-                        return
                     self.transition_to("ENTER_ROOM_LIST")
-                    return
+                    return True
 
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
             self.transition_to("RECOVERY")
+            return False
+            
+        return False
 
-    def handle_game_startup(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_game_startup(self, haystack: Optional[Image.Image] = None) -> bool:
         for key in ["game_start", "close_news", "coop_1", "coop_2"]:
             conf = (
                 self.config.CONF_STARTUP
@@ -963,7 +936,7 @@ class BBSBot:
                 else self.config.CONF_NORMAL
             )
             if self.find_image(key, confidence=conf, haystack=haystack):
-                self.smart_click(
+                return self.smart_click(
                     key,
                     f"startup {key}",
                     verify_key=key,
@@ -971,7 +944,6 @@ class BBSBot:
                     confidence=conf,
                     haystack=haystack,
                 )
-                return
 
         window_age = time.time() - self._startup_window_time
         if window_age > 2.0 and (
@@ -984,8 +956,10 @@ class BBSBot:
         ):
             logger.info("GAME_STARTUP: Lobby detected. Startup sequence complete.")
             self.transition_to("MENU")
+        
+        return False
 
-    def handle_recovery(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_recovery(self, haystack: Optional[Image.Image] = None) -> bool:
         elapsed = time.time() - self.last_state_change_time
         if int(elapsed) > 0 and int(elapsed) % 10 == 0:
             if int(elapsed) != self._last_recovery_log:
@@ -995,19 +969,21 @@ class BBSBot:
                 self._last_recovery_log = int(elapsed)
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK:
             self.recover_game()
+            return True
         else:
             for state, template in self.RECOVERY_MAP:
                 if self.find_image(template, haystack=haystack):
                     self.transition_to(state)
-                    return
+                    return False
             time.sleep(self.config.POLL_RECOVERY)
+        return False
 
-    def handle_distraction(self, haystack: Optional[Image.Image] = None) -> None:
+    def handle_distraction(self, haystack: Optional[Image.Image] = None) -> bool:
         duration = random.randint(*self.config.DISTRACTION_DURATION)
         logger.info(f"DISTRACTION: Resting for {duration}s...")
         time.sleep(duration)
         self.next_distraction_run = 9999
-        self.quest_watchdog = time.time()
+        self.last_state_change_time = time.time()
         self.fatigue_start_time = time.time()
         self.active_profile = "SHIKAI_MAX"
         self.config._apply_profile(self.active_profile)
@@ -1020,16 +996,23 @@ class BBSBot:
             * 60
         )
         self.transition_to("RECOVERY")
+        return True
 
-    def retire_from_quest(self, haystack: Optional[Image.Image] = None) -> None:
+    def retire_from_quest(self, haystack: Optional[Image.Image] = None) -> bool:
         logger.warning("Retiring sequence...")
         if self.find_image("retire", haystack=haystack):
-            self.smart_click("retire", "retire")
-            if self.find_image("okay"):
-                self.smart_click("okay", "confirm")
-                if self.find_image("closed_room_coop_quest_menu"):
-                    self.smart_click("closed_room_coop_quest_menu", "final confirm")
-        self.transition_to("MENU")
+            if self.smart_click("retire", "retire", haystack=haystack):
+                 return True
+        
+        if self.find_image("okay", haystack=haystack):
+            return self.smart_click("okay", "confirm", haystack=haystack)
+            
+        if self.find_image("closed_room_coop_quest_menu", haystack=haystack):
+            if self.smart_click("closed_room_coop_quest_menu", "final confirm", haystack=haystack):
+                self.transition_to("MENU")
+                return True
+        
+        return False
 
     def recover_game(self) -> None:
         self.consecutive_recovery_count += 1
@@ -1316,11 +1299,14 @@ class BBSBot:
             self.check_circadian_rhythm()
             self.check_session_limit()
             self.check_quest_watchdog()
+            # 1. Global Popups
             if self.handle_global_popups(self.snapshot):
                 continue
             handler = self.handlers.get(self.state)
             if handler:
-                handler(self.snapshot)
+                action_taken = handler(self.snapshot)
+                if action_taken:
+                    continue  # Atomic Heartbeat: Fresh snapshot after every action
             else:
                 self.transition_to("RECOVERY")
             time.sleep(self.config.POLL_MAIN_LOOP)

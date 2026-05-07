@@ -42,3 +42,11 @@
 *   **Type Integrity:** 100% `mypy` verified to prevent `NoneType` crashes during long-duration sessions.
 *   **Linting:** 100% `ruff` (PEP 8) compliant.
 *   **Unit Tests:** `test_v5_logic.py` validates matching math independently of the X11 environment.
+
+## 2026-05-06: V7 "The Surgeon" Implementation
+- Abandoned V6 nested-loop architecture due to race conditions and CPU spikes.
+- Implemented "Atomic Heartbeat": Snapshot -> Action -> Return.
+- Fixed logic leak where V6 handlers took extra screenshots outside the snapshot engine.
+- Implemented Passive Shielding: xprop check for IconicState before windowraise.
+- Verified focus-reclaim parity with V6.
+- Fixed handler return types for better flow control.
