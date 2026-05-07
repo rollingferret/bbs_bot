@@ -30,7 +30,7 @@ class BotConfiguration:
     RAW_TITLE: str = "Bleach: Brave Souls"
     CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
 
-    DELAY_COGNITIVE: Tuple[float, float] = (0.68, 0.05)
+    DELAY_COGNITIVE: Tuple[float, float] = (0.58, 0.05)
     DELAY_SNIPE: float = 0.20
     DELAY_POPUP: float = 1.5
     DELAY_READY: float = 0.90
@@ -42,7 +42,7 @@ class BotConfiguration:
     DELAY_POST_POPUP: float = 0.3
     WAIT_STABILIZE_ANIMATION: float = 0.8
     SAFETY_FLOOR_FACTOR: float = 0.05
-    TIMEOUT_VERIFY_UI: float = 0.7
+    TIMEOUT_VERIFY_UI: float = 1.2
     WAIT_CLICK_HOLD: float = 0.04
 
     TIMEOUT_STUCK: float = 300
@@ -101,7 +101,7 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.68, 0.05),
+                "DELAY_COGNITIVE": (0.58, 0.05),
                 "DELAY_SNIPE": 0.20,
                 "DELAY_POPUP": 1.5,
                 "DELAY_READY": 0.90,
@@ -116,7 +116,7 @@ class BotConfiguration:
                 "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
-                "DELAY_COGNITIVE": (0.95, 0.10),
+                "DELAY_COGNITIVE": (0.85, 0.10),
                 "DELAY_SNIPE": 0.40,
                 "DELAY_POPUP": 2.0,
                 "DELAY_READY": 1.10,
@@ -544,7 +544,7 @@ class BBSBot:
             return self.smart_click(
                 "open_coop_quest",
                 "specific quest",
-                "enter_room_button",
+                verify_key="open_coop_quest",
                 target_state="ENTER_ROOM_LIST",
                 wait_for_appearance=False,
                 haystack=haystack,
@@ -554,7 +554,7 @@ class BBSBot:
             return self.smart_click(
                 "coop_quest",
                 "expand menu",
-                "open_coop_quest",
+                verify_key="coop_quest",
                 wait_for_appearance=False,
                 haystack=haystack,
             )
