@@ -224,6 +224,10 @@ class BBSBot:
         ("MENU", "open_coop_quest"),
         ("MENU", "coop_quest"),
         ("GAME_STARTUP", "game_start"),
+        ("MENU", "closed_room_coop_quest_menu"),
+        ("SCAN_ROOMS", "close"),
+        ("SCAN_ROOMS", "unavailable_close"),
+        ("MENU", "disconnect_retry"),
     ]
 
     def __init__(self, config: BotConfiguration = BotConfiguration()) -> None:
@@ -465,22 +469,12 @@ class BBSBot:
             f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})"
         )
 
-        # 6. Authoritative Refocus (Shields user workspace)
-        if success and current_focus and current_focus != self.win_id:
+        # 6. Authoritative Refocus (Restored overnight secret)
+        if success and current_focus:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
-                subprocess.run(
-                    [
-                        "xdotool",
-                        "windowactivate",
-                        "--sync",
-                        current_focus,
-                        "windowraise",
-                        current_focus,
-                    ],
-                    check=False,
-                    stderr=subprocess.DEVNULL,
-                )
+                # Optimized sequence: focus first, then activate to reduce OS-level flicker
+                subprocess.run(["xdotool", "windowfocus", current_focus, "windowactivate", "--sync", current_focus, "windowraise", current_focus], check=False, stderr=subprocess.DEVNULL)
             except Exception:
                 pass
 
@@ -1244,7 +1238,13 @@ class BBSBot:
             self.recover_game()
         while True:
             self.ensure_window_ready()
-            
+
+            # Periodic Property Sync (Shield) - Passive state enforcement
+            now = time.time()
+            if now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC:
+                self.setup_window_properties()
+                self._last_property_sync = now
+
             if self.region:
                 try:
                     self.snapshot = pyautogui.screenshot(region=self.region)
