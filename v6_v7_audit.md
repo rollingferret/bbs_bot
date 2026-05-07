@@ -79,6 +79,7 @@ During the final Red Team Audit, several critical regressions and orphaned varia
 * **Snatch Timeout Fix**: Restored `TIMEOUT_LOBBY_JOIN` to 6.0s (from 4.0s) to allow game servers time to connect, and added `_force_refresh = True` to clear the room list after a timeout.
 * **Robust Window Filtering**: Restored `--onlyvisible` and `xprop WM_CLASS` checks to the `get_game_region` function to prevent the bot from locking onto ghost threads or browser tabs.
 * **Menu Regression**: Removed `wait_for_appearance=True` from `smart_click` in `handle_menu` to stop the bot from stalling out on menu navigation.
+* **Vision Sandboxing**: Verified that `pyautogui.screenshot()` strictly receives the dynamic bounding box from `get_game_region()` via `xdotool getwindowgeometry`. The bot physically cannot see or process pixels outside the active game window.
 * **Recovery Anchors Verified**: The `RECOVERY_MAP` array in V7 is a verified 1-to-1 match with V6 Stable.
 
 V7 "The Surgeon" is now saved and ready for live run validation.
