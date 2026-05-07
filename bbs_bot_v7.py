@@ -30,11 +30,11 @@ class BotConfiguration:
     RAW_TITLE: str = "Bleach: Brave Souls"
     CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
 
-    DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
+    DELAY_COGNITIVE: Tuple[float, float] = (0.68, 0.05)
     DELAY_SNIPE: float = 0.20
     DELAY_POPUP: float = 1.5
     DELAY_READY: float = 0.90
-    WAIT_ROOM_LOAD: float = 0.7
+    WAIT_ROOM_LOAD: float = 0.6
     WAIT_SEARCH_AGAIN: float = 0.8
     WAIT_POST_RETRY: float = 1.0
     WAIT_REFOCUS: float = 0.02
@@ -43,6 +43,7 @@ class BotConfiguration:
     WAIT_STABILIZE_ANIMATION: float = 0.8
     SAFETY_FLOOR_FACTOR: float = 0.05
     TIMEOUT_VERIFY_UI: float = 0.7
+    WAIT_CLICK_HOLD: float = 0.04
 
     TIMEOUT_STUCK: float = 300
     TIMEOUT_QUEST_MAX: float = 600
@@ -100,16 +101,17 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.78, 0.05),
+                "DELAY_COGNITIVE": (0.68, 0.05),
                 "DELAY_SNIPE": 0.20,
                 "DELAY_POPUP": 1.5,
                 "DELAY_READY": 0.90,
-                "WAIT_ROOM_LOAD": 0.7,
+                "WAIT_ROOM_LOAD": 0.6,
                 "WAIT_SEARCH_AGAIN": 0.8,
                 "WAIT_POST_RETRY": 1.0,
                 "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 0.8,
                 "WAIT_STABILIZE_ANIMATION": 0.8,
+                "WAIT_CLICK_HOLD": 0.04,
                 "TIMEOUT_VERIFY_UI": 0.7,
                 "DURATION_MINS": (45, 90),
             },
@@ -124,6 +126,7 @@ class BotConfiguration:
                 "WAIT_REFOCUS": 0.05,
                 "WAIT_REFRESH_COOLDOWN": 1.4,
                 "WAIT_STABILIZE_ANIMATION": 1.2,
+                "WAIT_CLICK_HOLD": 0.06,
                 "TIMEOUT_VERIFY_UI": 1.4,
                 "DURATION_MINS": (60, 180),
             },
@@ -480,6 +483,8 @@ class BBSBot:
                 "time": int(time.time() * 1000) & 0xFFFFFFFF,
             }
             window.send_event(protocol.event.ButtonPress(**details), propagate=True)
+            self.disp.flush()
+            time.sleep(self.config.WAIT_CLICK_HOLD)
             window.send_event(protocol.event.ButtonRelease(**details), propagate=True)
             self.disp.flush()
             self.disp.sync()
