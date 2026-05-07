@@ -34,8 +34,8 @@ class BotConfiguration:
     DELAY_SNIPE: float = 0.20
     DELAY_POPUP: float = 1.5
     DELAY_READY: float = 0.90
-    WAIT_ROOM_LOAD: float = 1.0
-    WAIT_SEARCH_AGAIN: float = 1.0
+    WAIT_ROOM_LOAD: float = 0.7
+    WAIT_SEARCH_AGAIN: float = 0.8
     WAIT_POST_RETRY: float = 1.0
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 0.8
@@ -51,7 +51,7 @@ class BotConfiguration:
     TIMEOUT_RUN_START: float = 300
     TIMEOUT_TAP_VERIFY: float = 15
     TIMEOUT_LOBBY_EXPAND: float = 20.0
-    TIMEOUT_LOBBY_JOIN: float = 4.0
+    TIMEOUT_LOBBY_JOIN: float = 6.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
     TIMEOUT_SCAN_IDLE: float = 20.0
 
@@ -104,13 +104,13 @@ class BotConfiguration:
                 "DELAY_SNIPE": 0.20,
                 "DELAY_POPUP": 1.5,
                 "DELAY_READY": 0.90,
-                "WAIT_ROOM_LOAD": 1.0,
-                "WAIT_SEARCH_AGAIN": 1.0,
+                "WAIT_ROOM_LOAD": 0.7,
+                "WAIT_SEARCH_AGAIN": 0.8,
                 "WAIT_POST_RETRY": 1.0,
                 "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 0.8,
                 "WAIT_STABILIZE_ANIMATION": 0.8,
-                "TIMEOUT_VERIFY_UI": 0.8,
+                "TIMEOUT_VERIFY_UI": 0.7,
                 "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
@@ -541,7 +541,7 @@ class BBSBot:
                 "specific quest",
                 "enter_room_button",
                 target_state="ENTER_ROOM_LIST",
-                wait_for_appearance=True,
+                wait_for_appearance=False,
                 haystack=haystack,
             )
 
@@ -550,7 +550,7 @@ class BBSBot:
                 "coop_quest",
                 "expand menu",
                 "open_coop_quest",
-                wait_for_appearance=True,
+                wait_for_appearance=False,
                 haystack=haystack,
             )
 
@@ -638,6 +638,7 @@ class BBSBot:
         if self._snatch_pending and (time.time() - self.last_snatch_time > self.config.TIMEOUT_LOBBY_JOIN):
             logger.info("Snatch timed out. Resetting pending flag.")
             self._snatch_pending = False
+            self._force_refresh = True
 
         if not self._snatch_pending:
             if getattr(self, "_force_refresh", False):
