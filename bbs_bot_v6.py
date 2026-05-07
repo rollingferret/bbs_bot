@@ -44,6 +44,7 @@ class BotConfiguration:
     WAIT_SEARCH_AGAIN: float = 1.0
     WAIT_LOBBY_READY: float = 0.3
     WAIT_POST_RETRY: float = 1.0
+    WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 0.8
     DELAY_POST_POPUP: float = 0.3
     WAIT_STABILIZE_ANIMATION: float = 0.8
@@ -86,7 +87,7 @@ class BotConfiguration:
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
 
     # --- Operational Safety ---
-    WINDOW_NOT_FOUND_RETRIES: int = 60 # 6 seconds at 0.1s loop
+    WINDOW_NOT_FOUND_RETRIES: int = 60  # 6 seconds at 0.1s loop
     MAX_DISCONNECT_RETRIES: Tuple[int, int] = (8, 16)
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
@@ -123,6 +124,7 @@ class BotConfiguration:
                 "WAIT_SEARCH_AGAIN": 1.0,
                 "WAIT_LOBBY_READY": 0.3,
                 "WAIT_POST_RETRY": 1.0,
+                "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 0.8,
                 "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8,
@@ -137,6 +139,7 @@ class BotConfiguration:
                 "WAIT_SEARCH_AGAIN": 1.5,
                 "WAIT_LOBBY_READY": 0.6,
                 "WAIT_POST_RETRY": 2.0,
+                "WAIT_REFOCUS": 0.05,
                 "WAIT_REFRESH_COOLDOWN": 1.4,
                 "WAIT_STABILIZE_ANIMATION": 1.2,
                 "TIMEOUT_VERIFY_UI": 1.4,
@@ -180,6 +183,7 @@ class BotConfiguration:
         self.WAIT_SEARCH_AGAIN = s["WAIT_SEARCH_AGAIN"]
         self.WAIT_LOBBY_READY = s["WAIT_LOBBY_READY"]
         self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
+        self.WAIT_REFOCUS = s.get("WAIT_REFOCUS", 0.02)
         self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
         self.WAIT_STABILIZE_ANIMATION = s["WAIT_STABILIZE_ANIMATION"]
         self.TIMEOUT_VERIFY_UI = s["TIMEOUT_VERIFY_UI"]
@@ -462,6 +466,7 @@ class BBSBot:
 
         # 6. Authoritative Refocus (Shields user workspace)
         if success and current_focus:
+            time.sleep(self.config.WAIT_REFOCUS)
             try:
                 subprocess.run(
                     [
@@ -1274,15 +1279,15 @@ class BBSBot:
             self.recover_game()
         while True:
             self.ensure_window_ready()
-            
+
             # Periodic Property Sync (Shield) - throttled to POLL_PROPERTY_SYNC
             now = time.time()
-            if not hasattr(self, '_last_property_sync'):
+            if not hasattr(self, "_last_property_sync"):
                 self._last_property_sync = 0.0
             if now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC:
                 self.setup_window_properties()
                 self._last_property_sync = now
-            
+
             if self.region:
                 try:
                     self.snapshot = pyautogui.screenshot(region=self.region)
