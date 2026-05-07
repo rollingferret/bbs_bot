@@ -36,11 +36,11 @@ class BotConfiguration:
     CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
 
     # Current Active Profile (Defaults)
-    DELAY_COGNITIVE: Tuple[float, float] = (0.68, 0.05)
+    DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
     DELAY_SNIPE: float = 0.20
     DELAY_POPUP: float = 1.5
     DELAY_READY: float = 0.90
-    WAIT_ROOM_LOAD: float = 0.6
+    WAIT_ROOM_LOAD: float = 1.0
     WAIT_SEARCH_AGAIN: float = 1.0
     WAIT_LOBBY_READY: float = 0.3
     WAIT_POST_RETRY: float = 1.0
@@ -116,11 +116,11 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.68, 0.05),
+                "DELAY_COGNITIVE": (0.78, 0.05),
                 "DELAY_SNIPE": 0.20,
                 "DELAY_POPUP": 1.5,
                 "DELAY_READY": 0.90,
-                "WAIT_ROOM_LOAD": 0.6,
+                "WAIT_ROOM_LOAD": 1.0,
                 "WAIT_SEARCH_AGAIN": 1.0,
                 "WAIT_LOBBY_READY": 0.3,
                 "WAIT_POST_RETRY": 1.0,
@@ -131,11 +131,11 @@ class BotConfiguration:
                 "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
-                "DELAY_COGNITIVE": (0.85, 0.10),
+                "DELAY_COGNITIVE": (0.95, 0.10),
                 "DELAY_SNIPE": 0.40,
                 "DELAY_POPUP": 2.0,
                 "DELAY_READY": 1.10,
-                "WAIT_ROOM_LOAD": 0.8,
+                "WAIT_ROOM_LOAD": 1.2,
                 "WAIT_SEARCH_AGAIN": 1.5,
                 "WAIT_LOBBY_READY": 0.6,
                 "WAIT_POST_RETRY": 2.0,
@@ -474,7 +474,20 @@ class BBSBot:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
                 # Optimized sequence: focus first, then activate to reduce OS-level flicker
-                subprocess.run(["xdotool", "windowfocus", current_focus, "windowactivate", "--sync", current_focus, "windowraise", current_focus], check=False, stderr=subprocess.DEVNULL)
+                subprocess.run(
+                    [
+                        "xdotool",
+                        "windowfocus",
+                        current_focus,
+                        "windowactivate",
+                        "--sync",
+                        current_focus,
+                        "windowraise",
+                        current_focus,
+                    ],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
             except Exception:
                 pass
 
@@ -661,6 +674,10 @@ class BBSBot:
             )
             valid = BBSBot.match_rooms(autos, v_rules, self.config)
 
+            if valid:
+                # Busy with rooms. Reset the search timer immediately.
+                self.search_start_time = time.time()
+
             for auto, rule in valid:
                 local_reg = (
                     auto.left - 5,
@@ -683,6 +700,7 @@ class BBSBot:
                 if self.smart_click(
                     target_box, "snatch room", custom_delay=self.config.DELAY_SNIPE
                 ):
+                    # We attempted a snatch. Force a fresh loop to avoid search-spam.
                     self.search_start_time = time.time()
                     start_v = time.time()
                     while time.time() - start_v < self.config.TIMEOUT_LOBBY_JOIN:
@@ -731,12 +749,16 @@ class BBSBot:
                                 return
 
                         time.sleep(self.config.POLL_UI_VERIFY)
+                    return  # Attempt finished. Return to fresh loop.
+                return  # Attempt finished. Return to fresh loop.
 
         if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN:
+            # Only search if we actually see the button AND there are no valid rooms to snatch
             if self.find_image("search_again", haystack=haystack):
                 if self.smart_click("search_again", "search again", haystack=haystack):
                     self.search_start_time = time.time()
                     time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
+                    return
 
     @staticmethod
     def match_rooms(
@@ -1152,14 +1174,32 @@ class BBSBot:
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
             now = time.time()
-            # 1. Authoritative ID Search (Throttled to 5s)
-            if not self.win_id or (now - self._last_id_search > self.config.POLL_PROPERTY_SYNC):
-                wids = subprocess.check_output(["xdotool", "search", "--onlyvisible", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+            # 1. Authoritative ID Search (Throttled to 5s) - Find window even if hidden
+            if not self.win_id or (
+                now - self._last_id_search > self.config.POLL_PROPERTY_SYNC
+            ):
+                wids = (
+                    subprocess.check_output(
+                        ["xdotool", "search", "--name", self.config.RAW_TITLE],
+                        text=True,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    .strip()
+                    .split()
+                )
                 valid_wid = None
                 for wid in wids:
                     try:
-                        pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
-                        cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
+                        pid = subprocess.check_output(
+                            ["xdotool", "getwindowpid", wid],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        ).strip()
+                        cmd = subprocess.check_output(
+                            ["ps", "-p", pid, "-o", "cmd", "--no-headers"],
+                            text=True,
+                            stderr=subprocess.DEVNULL,
+                        ).strip()
                         if "BleachBraveSouls" in cmd:
                             valid_wid = wid
                             break
@@ -1173,14 +1213,21 @@ class BBSBot:
                 raise GameWindowNotFoundError()
 
             # 2. Real-time Geometry Sync (Happens every 0.1s loop)
-            geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", self.win_id], text=True, stderr=subprocess.DEVNULL).splitlines()
-            geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
+            geo_lines = subprocess.check_output(
+                ["xdotool", "getwindowgeometry", "--shell", self.win_id],
+                text=True,
+                stderr=subprocess.DEVNULL,
+            ).splitlines()
+            geo = {
+                k: int(v)
+                for k, v in (line.split("=") for line in geo_lines if "=" in line)
+            }
             sw, sh = pyautogui.size()
-            
+
             gx, gy, gw, gh = geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
             rx, ry = max(0, gx), max(0, gy)
             rw, rh = min(gw - (rx - gx), sw - rx), min(gh - (ry - gy), sh - ry)
-            
+
             self.region = (rx, ry, rw, rh)
             return self.region
         except Exception as e:
@@ -1189,7 +1236,18 @@ class BBSBot:
     def setup_window_properties(self) -> None:
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
             # Force sticky and above (Passive Restoration)
-            subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
+            subprocess.run(
+                ["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"],
+                check=False,
+                stderr=subprocess.DEVNULL,
+            )
+            # Gentle un-minimize check
+            try:
+                state = subprocess.check_output(["xprop", "-id", self.win_id, "WM_STATE"], text=True, stderr=subprocess.DEVNULL).lower()
+                if "iconic" in state:
+                    subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
 
     def log_session_summary(self) -> None:
         elapsed = time.time() - self.start_time
