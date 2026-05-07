@@ -672,18 +672,37 @@ class BBSBot:
     def match_rooms(
         autos: List[pyscreeze.Box], rules: List[pyscreeze.Box], config: BotConfiguration
     ) -> List[Tuple[pyscreeze.Box, pyscreeze.Box]]:
-        valid = []
-        for a in BBSBot.dedupe_autos(autos, config):
+        unique_autos = BBSBot.dedupe_autos(autos, config)
+        if not unique_autos or not rules:
+            return []
+
+        potential_pairs = []
+        for a in unique_autos:
             ax, ay = a.left + a.width // 2, a.top + a.height // 2
-            best_r, min_d = None, float("inf")
             for r in rules:
                 rx, ry = r.left + r.width // 2, r.top + r.height // 2
-                if ry > ay:
-                    d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
-                    if d < min_d and d < config.MAX_RULE_DISTANCE:
-                        min_d, best_r = d, r
-            if best_r:
-                valid.append((a, best_r))
+                # Rule must be below AUTO, but not by much (cutoff at 70px)
+                dy = ry - ay
+                if 0 < dy < 70:
+                    d = abs(dy) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
+                    if d < config.MAX_RULE_DISTANCE:
+                        potential_pairs.append((d, a, r))
+
+        # Sort all pairs by distance so the truest matches are processed first
+        potential_pairs.sort(key=lambda x: x[0])
+
+        valid = []
+        used_autos = set()
+        used_rules = set()
+
+        for d, a, r in potential_pairs:
+            a_id = (a.left, a.top)
+            r_id = (r.left, r.top)
+            if a_id not in used_autos and r_id not in used_rules:
+                valid.append((a, r))
+                used_autos.add(a_id)
+                used_rules.add(r_id)
+
         return valid
 
     @staticmethod
