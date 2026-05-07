@@ -112,7 +112,7 @@ class BotConfiguration:
                 "WAIT_REFRESH_COOLDOWN": 0.8,
                 "WAIT_STABILIZE_ANIMATION": 0.8,
                 "WAIT_CLICK_HOLD": 0.04,
-                "TIMEOUT_VERIFY_UI": 0.7,
+                "TIMEOUT_VERIFY_UI": 1.2,
                 "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
@@ -916,11 +916,16 @@ class BBSBot:
                 else self.config.CONF_NORMAL
             )
             if self.find_image(key, confidence=conf, haystack=haystack):
+                # Tabs and News need more time to process than a title screen click
+                delay = 1.0 if key in ["coop_1", "coop_2", "close_news"] else None
+                v_key = None if key in ["coop_1", "coop_2"] else key
+                
                 return self.smart_click(
                     key,
                     f"startup {key}",
-                    verify_key=key,
+                    verify_key=v_key,
                     wait_for_appearance=False,
+                    custom_delay=delay,
                     confidence=conf,
                     haystack=haystack,
                 )
