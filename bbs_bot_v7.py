@@ -69,7 +69,7 @@ class BotConfiguration:
     AUTO_ON_CONFIDENCE: float = 0.85
 
     ROOM_MATCH_WEIGHT: float = 0.1
-    MAX_RULE_DISTANCE: int = 110
+    MAX_RULE_DISTANCE: int = 100
     AUTO_ICON_DEDUPE_DIST: int = 60
     CLICK_SIGMA_FACTOR: float = 10.0
     SNATCH_BOX_OFFSET: Tuple[int, int] = (20, 10)
