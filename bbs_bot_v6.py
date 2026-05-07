@@ -257,6 +257,7 @@ class BBSBot:
         self._last_popup_check: float = 0.0
         self._last_recovery_log: int = 0
         self._last_property_sync: float = 0.0
+        self._last_id_search: float = 0.0
         self._run_counted: bool = False
         self._startup_window_time: float = time.time()
 
@@ -465,7 +466,7 @@ class BBSBot:
         )
 
         # 6. Authoritative Refocus (Shields user workspace)
-        if success and current_focus:
+        if success and current_focus and current_focus != self.win_id:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
                 subprocess.run(
@@ -1156,62 +1157,36 @@ class BBSBot:
 
     def get_game_region(self) -> Tuple[int, int, int, int]:
         try:
-            # 1. Search Logic: Search only visible windows (Overnight baseline)
-            wids = (
-                subprocess.check_output(
-                    [
-                        "xdotool",
-                        "search",
-                        "--onlyvisible",
-                        "--name",
-                        self.config.RAW_TITLE,
-                    ],
-                    text=True,
-                    stderr=subprocess.DEVNULL,
-                )
-                .strip()
-                .split()
-            )
-            valid_wid = None
-            for wid in wids:
-                try:
-                    pid = subprocess.check_output(
-                        ["xdotool", "getwindowpid", wid],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    ).strip()
-                    cmd = subprocess.check_output(
-                        ["ps", "-p", pid, "-o", "cmd", "--no-headers"],
-                        text=True,
-                        stderr=subprocess.DEVNULL,
-                    ).strip()
-                    if "BleachBraveSouls" in cmd:
-                        valid_wid = wid
-                        break
-                except Exception:
-                    continue
+            now = time.time()
+            # 1. Authoritative ID Search (Throttled to 5s)
+            if not self.win_id or (now - self._last_id_search > self.config.POLL_PROPERTY_SYNC):
+                wids = subprocess.check_output(["xdotool", "search", "--onlyvisible", "--name", self.config.RAW_TITLE], text=True, stderr=subprocess.DEVNULL).strip().split()
+                valid_wid = None
+                for wid in wids:
+                    try:
+                        pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
+                        cmd = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
+                        if "BleachBraveSouls" in cmd:
+                            valid_wid = wid
+                            break
+                    except Exception:
+                        continue
+                if valid_wid:
+                    self.win_id = valid_wid
+                self._last_id_search = now
 
-            if not valid_wid:
+            if not self.win_id:
                 raise GameWindowNotFoundError()
 
-            self.win_id = valid_wid
-
-            # 2. Geometry Sync (No sleep)
-            geo_lines = subprocess.check_output(
-                ["xdotool", "getwindowgeometry", "--shell", self.win_id],
-                text=True,
-                stderr=subprocess.DEVNULL,
-            ).splitlines()
-            geo = {
-                k: int(v)
-                for k, v in (line.split("=") for line in geo_lines if "=" in line)
-            }
+            # 2. Real-time Geometry Sync (Happens every 0.1s loop)
+            geo_lines = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", self.win_id], text=True, stderr=subprocess.DEVNULL).splitlines()
+            geo = {k: int(v) for k, v in (line.split("=") for line in geo_lines if "=" in line)}
             sw, sh = pyautogui.size()
-
+            
             gx, gy, gw, gh = geo["X"], geo["Y"], geo["WIDTH"], geo["HEIGHT"]
             rx, ry = max(0, gx), max(0, gy)
             rw, rh = min(gw - (rx - gx), sw - rx), min(gh - (ry - gy), sh - ry)
-
+            
             self.region = (rx, ry, rw, rh)
             return self.region
         except Exception as e:
@@ -1219,18 +1194,8 @@ class BBSBot:
 
     def setup_window_properties(self) -> None:
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
-            # Force sticky and above exactly once during startup/recovery
-            subprocess.run(
-                ["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"],
-                check=False,
-                stderr=subprocess.DEVNULL,
-            )
-            # Gently lift to top without stealing focus
-            subprocess.run(
-                ["xdotool", "windowraise", self.win_id],
-                check=False,
-                stderr=subprocess.DEVNULL,
-            )
+            # Force sticky and above (Passive Restoration)
+            subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
 
     def log_session_summary(self) -> None:
         elapsed = time.time() - self.start_time
@@ -1279,15 +1244,7 @@ class BBSBot:
             self.recover_game()
         while True:
             self.ensure_window_ready()
-
-            # Periodic Property Sync (Shield) - throttled to POLL_PROPERTY_SYNC
-            now = time.time()
-            if not hasattr(self, "_last_property_sync"):
-                self._last_property_sync = 0.0
-            if now - self._last_property_sync > self.config.POLL_PROPERTY_SYNC:
-                self.setup_window_properties()
-                self._last_property_sync = now
-
+            
             if self.region:
                 try:
                     self.snapshot = pyautogui.screenshot(region=self.region)
