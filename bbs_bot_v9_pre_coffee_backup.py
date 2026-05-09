@@ -181,7 +181,6 @@ class BBSBot:
         self.active_profile = "SHIKAI_MAX"
         self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
         self.state, self.run_count, self.start_time = "RECOVERY", 0, time.time()
-        self.next_distraction_run = 9999
         self.fatigue_start_time = self.last_state_change_time = self.quest_watchdog = time.time()
         self.win_id = self.region = self.snapshot = self.expected_okay_context = None
         self.consecutive_recovery_count = self.search_start_time = 0
@@ -231,8 +230,8 @@ class BBSBot:
             fname = f"alignment_audit/{name}_{ts}.png"
             self.snapshot.save(fname)
             files = sorted([os.path.join("alignment_audit", f) for f in os.listdir("alignment_audit")], key=os.path.getmtime)
-            if len(files) > 100:
-                for f in files[:-100]: os.remove(f)
+            if len(files) > 10:
+                for f in files[:-10]: os.remove(f)
         except Exception: pass
 
     def save_error_snapshot(self, reason):
@@ -245,13 +244,7 @@ class BBSBot:
         except Exception: pass
 
     def get_template_confidence(self, key):
-        c = {
-            "open_coop_quest": 0.90, "coop_quest": 0.90, "coop_1": 0.85, 
-            "ready": 0.95, "disconnect_retry": 0.90, "unavailable_close": 0.95, 
-            "close_news": 0.92, "close": 0.92,
-            "ingame_auto_on": 0.95, "ingame_auto_off": 0.95,
-            "tap1": 0.95, "tap2": 0.95, "retry": 0.95
-        }
+        c = {"open_coop_quest": 0.90, "coop_quest": 0.90, "coop_1": 0.85, "ready": 0.95, "disconnect_retry": 0.90, "unavailable_close": 0.95}
         return c.get(key, self.config.CONF_NORMAL)
 
     def find_image(self, key, confidence=None, region=None, haystack=None):
@@ -392,19 +385,18 @@ class BBSBot:
             if key in blocked: continue
             if key == "okay" and not self.is_safe_room_okay_context(haystack): continue
             
-            conf = self.get_template_confidence(key)
+            # Use high confidence for generic Close to avoid menu confusion
+            conf = 0.85 if key == "close" else self.get_template_confidence(key)
 
             if self.find_image(key, confidence=conf, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
                 if key == "disconnect_retry": self.disconnect_retry_count += 1
-                if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
-                    return False
+                self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack)
                 if key in ["closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "okay", "close"]:
                     self.search_start_time = time.time()
                     if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY"]: self.transition_to("SCAN_ROOMS")
                     return True
-                if self.state != "GAME_STARTUP" and self.state not in ["RUNNING", "FINISH", "CHECK_RUN_START"]:
-                    self.transition_to("MENU")
+                if self.state != "GAME_STARTUP": self.transition_to("MENU")
                 return True
         return False
 
@@ -423,8 +415,7 @@ class BBSBot:
         # Case A: We are on the 'Select a Room Type' menu
         if self.find_image("enter_room_button", haystack=haystack):
             # V9.36: Stay in ENTER_ROOM_LIST after click so 'close' button is blocked
-            # Fix: Wait for button disappearance to prevent double-clicks
-            if self.smart_click("enter_room_button", "enter room list", verify_key="enter_room_button", wait_for_appearance=False, haystack=haystack): 
+            if self.smart_click("enter_room_button", "enter room list", haystack=haystack): 
                 return True
         
         # Case B: We skipped the menu and went straight to rooms (common after retry)
@@ -530,13 +521,7 @@ class BBSBot:
                 return False
         if self.find_image("retry", haystack=haystack):
             if self.smart_click("retry", "retry quest", verify_key="retry", verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD, haystack=haystack):
-                time.sleep(self.config.WAIT_POST_RETRY)
-                if self.run_count >= self.next_distraction_run:
-                    self.next_distraction_run = 9999
-                    self.transition_to("DISTRACTION")
-                    return True
-                self.transition_to("ENTER_ROOM_LIST")
-                return True
+                time.sleep(self.config.WAIT_POST_RETRY); self.transition_to("ENTER_ROOM_LIST"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
             self.transition_to("RECOVERY"); return True
         return False
@@ -556,21 +541,14 @@ class BBSBot:
 
     def handle_distraction(self, haystack=None):
         logger.info("DISTRACTION: Sleeping..."); time.sleep(random.randint(*self.config.DISTRACTION_DURATION))
-        self.quest_watchdog = time.time()
-        self.fatigue_start_time = time.time()
-        self.active_profile = "SHIKAI_MAX"
-        self.config._apply_profile(self.active_profile)
-        if self.config.CIRCADIAN_PROFILES:
-            self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
-        self.transition_to("RECOVERY")
-        return True
+        self.quest_watchdog = time.time(); self.transition_to("RECOVERY"); return True
 
     def transition_to(self, state):
         if self.state != state:
             logger.info(f"TRANSITION: {self.state} -> {state}"); old = self.state; self.state = state; self.last_state_change_time = time.time()
             if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"to_{state}")
             if state == "RECOVERY": self.save_error_snapshot(f"recovery_from_{old}")
-            if state in ["RUNNING", "READY"]: self.reset_quest_watchdog(state.lower())
+            if state == "RUNNING": self.reset_quest_watchdog("running")
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
             if state in ["MENU", "READY", "CHECK_RUN_START", "ENTER_ROOM_LIST"]: self._run_counted = False
             if old == "FINISH" and state != "FINISH": self.reset_quest_watchdog("completed")
@@ -581,70 +559,46 @@ class BBSBot:
     def retire_from_quest(self, haystack=None):
         logger.warning("Retiring..."); self.expected_okay_context = "RETIRE_CONFIRM"
         if self.find_image("retire", haystack=haystack):
-            if self.smart_click("retire", "retire", verify_key="okay", wait_for_appearance=True, haystack=haystack):
-                self.smart_click("okay", "confirm", verify_key="okay")
+            self.smart_click("retire", "retire", haystack=haystack)
+            if self.find_image("okay", haystack=haystack): self.smart_click("okay", "confirm", haystack=haystack)
         self.expected_okay_context = None; self.transition_to("MENU"); return True
 
     def recover_game(self):
         self.save_error_snapshot("hard_recover_game")
         self.consecutive_recovery_count += 1
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES: sys.exit(1)
-        self.quest_watchdog = time.time()
         subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL)
         time.sleep(self.config.WAIT_RESTART)
         subprocess.Popen(["steam", "-applaunch", "1201240"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
-        # Patience: Wait for window to appear before returning
-        start = time.time()
-        while time.time() - start < self.config.TIMEOUT_GAME_START:
-            try:
-                if self.get_game_region(): break
-            except GameWindowNotFoundError:
-                time.sleep(2.0)
-        
         self.transition_to("GAME_STARTUP")
 
     def check_quest_watchdog(self):
         if time.time() - self.quest_watchdog > self.config.TIMEOUT_QUEST_MAX: self.recover_game()
-
-    def ensure_window_ready(self):
-        try:
-            self.get_game_region()
-        except GameWindowNotFoundError:
-            self.win_id = self.region = self.snapshot = None
-            return False
-        return True
 
     def get_game_region(self):
         try:
             now = time.time()
             if not self.win_id or (now - getattr(self, "_last_id_search", 0) > 5.0):
                 cmd = ["xdotool", "search", "--name", self.config.RAW_TITLE]
-                res = subprocess.run(cmd, capture_output=True, text=True)
-                wids = res.stdout.strip().split()
+                wids = subprocess.check_output(cmd, text=True, stderr=subprocess.DEVNULL).strip().split()
                 valid_wid = None
                 for wid in wids:
                     try:
-                        pid_res = subprocess.run(["xdotool", "getwindowpid", wid], capture_output=True, text=True)
-                        pid = pid_res.stdout.strip()
-                        if not pid: continue
-                        proc_res = subprocess.run(["ps", "-p", pid, "-o", "cmd", "--no-headers"], capture_output=True, text=True)
-                        proc_info = proc_res.stdout.strip()
+                        pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
+                        proc_info = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
                         if "BleachBraveSouls" in proc_info: valid_wid = wid; break
                     except Exception: continue
                 if valid_wid: self.win_id = valid_wid
                 self._last_id_search = now
             if not self.win_id: raise GameWindowNotFoundError("Window ID not found")
-            geo_res = subprocess.run(["xdotool", "getwindowgeometry", "--shell", self.win_id], capture_output=True, text=True)
-            if geo_res.returncode != 0: 
-                self.win_id = None
-                raise GameWindowNotFoundError("Window geometry retrieval failed")
-            g = {line.split("=")[0]: int(line.split("=")[1]) for line in geo_res.stdout.splitlines() if "=" in line}
+            geo = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", self.win_id], text=True)
+            g = {line.split("=")[0]: int(line.split("=")[1]) for line in geo.splitlines() if "=" in line}
             if g.get("WIDTH", 0) > 100: self.win_id, self.region = self.win_id, (g["X"], g["Y"], g["WIDTH"], g["HEIGHT"]); return self.region
             raise GameWindowNotFoundError("Window geometry invalid")
-        except GameWindowNotFoundError: raise
         except Exception as e:
-            raise GameWindowNotFoundError(str(e)) from e
+            if not isinstance(e, GameWindowNotFoundError):
+                logger.debug(f"get_game_region error: {e}")
+            raise GameWindowNotFoundError(str(e))
 
     def setup_window_properties(self):
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
@@ -663,9 +617,6 @@ class BBSBot:
                 duration = random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
                 self.next_profile_swap = time.time() + duration
                 logger.info(f"CIRCADIAN SHIFT: {self.active_profile} for {duration/60:.0f}m")
-            if old == "SHIKAI_MAX" and self.active_profile == "SHIKAI_NORMAL":
-                self.next_distraction_run = self.run_count + random.randint(*self.config.CASUAL_LINGER_RUNS)
-                logger.info(f"FATIGUE: Break after run #{self.next_distraction_run}.")
 
     def check_session_limit(self):
         if (time.time() - self.start_time) / 3600 >= self.config.SESSION_MAX_HOURS: sys.exit(0)
@@ -680,17 +631,13 @@ class BBSBot:
         last_prop_sync = 0.0
         while True:
             try:
-                if not self.ensure_window_ready():
-                    logger.warning("Game window not found; waiting...")
-                    time.sleep(2.0)
-                    continue
-
+                self.get_game_region()
                 if time.time() - last_prop_sync > self.config.POLL_PROPERTY_SYNC:
                     self.setup_window_properties(); last_prop_sync = time.time()
-                
-                monitor = {"top": self.region[1], "left": self.region[0], "width": self.region[2], "height": self.region[3]}
-                sct_img = self.sct.grab(monitor); self.snapshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
-                
+                if self.region:
+                    monitor = {"top": self.region[1], "left": self.region[0], "width": self.region[2], "height": self.region[3]}
+                    sct_img = self.sct.grab(monitor); self.snapshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                else: self.snapshot = None
                 self.check_quest_watchdog(); self.update_fatigue(); self.check_circadian_rhythm(); self.check_session_limit()
                 handler = self.handlers.get(self.state)
                 if handler and handler(self.snapshot): continue
