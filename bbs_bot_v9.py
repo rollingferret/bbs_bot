@@ -20,7 +20,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
-        logging.FileHandler("v9_behavior.log"),
+        logging.FileHandler("v9_behavior.log", mode="w"),
         logging.StreamHandler(sys.stdout),
     ],
 )
@@ -205,6 +205,10 @@ class BBSBot:
         except:
             logger.error("FATAL: X11/MSS Init Error"); sys.exit(1)
         if not os.path.exists("alignment_audit"): os.makedirs("alignment_audit")
+        else:
+            for f in os.listdir("alignment_audit"):
+                try: os.remove(os.path.join("alignment_audit", f))
+                except: pass
         logger.info("BBS Sentinel V9.37 Initialized.")
 
     def _load_templates(self):
