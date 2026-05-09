@@ -1,0 +1,8 @@
+[tool.mypy]
+ignore_missing_imports = true
+
+[tool.ruff.lint]
+ignore = ["F401", "E701", "E702", "E722"]
+
+[tool.ruff]
+line-length = 120

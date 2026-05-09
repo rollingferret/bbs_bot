@@ -639,7 +639,7 @@ class BBSBot:
                 if handler and handler(self.snapshot): continue
                 if self.handle_global_popups(self.snapshot): continue
                 time.sleep(self.config.POLL_MAIN_LOOP)
-            except Exception as e:
+            except Exception:
                 logger.exception("Loop Error:")
                 self.save_error_snapshot("fatal_loop_error")
                 self.transition_to("RECOVERY")
