@@ -202,13 +202,13 @@ class BBSBot:
         try:
             self.disp = display.Display()
             self.sct = mss.mss()
-        except:
+        except Exception:
             logger.error("FATAL: X11/MSS Init Error"); sys.exit(1)
         if not os.path.exists("alignment_audit"): os.makedirs("alignment_audit")
         else:
             for f in os.listdir("alignment_audit"):
                 try: os.remove(os.path.join("alignment_audit", f))
-                except: pass
+                except Exception: pass
         if not os.path.exists("error_snapshots"): os.makedirs("error_snapshots")
         logger.info("BBS Sentinel V9.37 Initialized.")
 
@@ -216,7 +216,7 @@ class BBSBot:
         if not self.config.TEMPLATES: return
         for k, v in self.config.TEMPLATES.items():
             try: self.cached_templates[k] = Image.open(v).convert("RGB")
-            except: logger.error(f"Template error: {k}")
+            except Exception: logger.error(f"Template error: {k}")
 
     def check_dependencies(self):
         for cmd in ["xdotool", "wmctrl", "pkill", "ps"]:
@@ -232,7 +232,7 @@ class BBSBot:
             files = sorted([os.path.join("alignment_audit", f) for f in os.listdir("alignment_audit")], key=os.path.getmtime)
             if len(files) > 10:
                 for f in files[:-10]: os.remove(f)
-        except: pass
+        except Exception: pass
 
     def save_error_snapshot(self, reason):
         if not self.snapshot: return
@@ -241,7 +241,7 @@ class BBSBot:
             fname = f"error_snapshots/error_{reason}_{ts}.png"
             self.snapshot.save(fname)
             logger.error(f"Error snapshot saved: {fname}")
-        except: pass
+        except Exception: pass
 
     def get_template_confidence(self, key):
         c = {"open_coop_quest": 0.90, "coop_quest": 0.90, "coop_1": 0.85, "ready": 0.95, "disconnect_retry": 0.90, "unavailable_close": 0.95}
@@ -259,7 +259,7 @@ class BBSBot:
             template_path = self.config.TEMPLATES.get(key, "")
             if not template_path: return None
             return pyautogui.locateOnScreen(template_path, region=self.region, confidence=conf)
-        except: return None
+        except Exception: return None
 
     def find_stable_image(self, key, confidence=None, frames=3):
         for _ in range(frames):
@@ -278,7 +278,7 @@ class BBSBot:
             template_path = self.config.TEMPLATES.get(key, "") if self.config.TEMPLATES else ""
             if template_path: return list(pyautogui.locateAllOnScreen(template_path, region=self.region, confidence=confidence))
             return []
-        except: return []
+        except Exception: return []
 
     def current_phase(self):
         p = {"GAME_STARTUP": "STARTUP", "MENU": "MENU", "ENTER_ROOM_LIST": "JOIN", "SCAN_ROOMS": "SEARCH",
@@ -318,14 +318,14 @@ class BBSBot:
         if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"pre_click_{description.replace(' ', '_')}")
         cur_focus = None
         try: cur_focus = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
-        except: pass
+        except Exception: pass
         success = self._send_x11_click(click_x, click_y)
         logger.info(f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
         if success and cur_focus:
             time.sleep(self.config.WAIT_REFOCUS)
             try:
                 subprocess.run(["xdotool", "windowfocus", cur_focus, "windowactivate", "--sync", cur_focus, "windowraise", cur_focus], check=False, stderr=subprocess.DEVNULL)
-            except: pass
+            except Exception: pass
         if success and verify_key:
             start, limit = time.time(), (verify_timeout or self.config.TIMEOUT_VERIFY_UI)
             while time.time() - start < limit:
@@ -363,7 +363,7 @@ class BBSBot:
             self.disp.flush()
             self.disp.sync()
             return True
-        except: return False
+        except Exception: return False
 
     def is_safe_room_okay_context(self, haystack=None):
         if self.state not in {"SCAN_ROOMS", "RECOVERY", "MENU", "READY", "CHECK_RUN_START"}: return False
@@ -583,7 +583,7 @@ class BBSBot:
                         pid = subprocess.check_output(["xdotool", "getwindowpid", wid], text=True, stderr=subprocess.DEVNULL).strip()
                         proc_info = subprocess.check_output(["ps", "-p", pid, "-o", "cmd", "--no-headers"], text=True, stderr=subprocess.DEVNULL).strip()
                         if "BleachBraveSouls" in proc_info: valid_wid = wid; break
-                    except: continue
+                    except Exception: continue
                 if valid_wid: self.win_id = valid_wid
                 self._last_id_search = now
             if not self.win_id: raise GameWindowNotFoundError("Window ID not found")
@@ -602,7 +602,7 @@ class BBSBot:
             try:
                 state = subprocess.check_output(["xprop", "-id", self.win_id, "WM_STATE"], text=True, stderr=subprocess.DEVNULL).lower()
                 if "iconic" in state: subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
-            except: pass
+            except Exception: pass
 
     def check_circadian_rhythm(self):
         if time.time() > self.next_profile_swap:
