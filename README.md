@@ -1,6 +1,6 @@
-# Bleach: Brave Souls Auto Co-op Bot
+# Bleach: Brave Souls Auto Co-op Bot (BBS Sentinel)
 
-An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming on Linux/X11. This project has evolved through 9 generations to achieve a balance between human-like behavior and bulletproof reliability.
+An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming on Linux/X11. This project has evolved through 9 generations to achieve a balance between human-like behavior, blistering speed, and bulletproof reliability.
 
 ## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
 
@@ -14,29 +14,21 @@ An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op ques
 
 ---
 
-## Project Status & Versions
+## 🌟 Key Features (V9.39)
 
-- **V2 (Legacy)**: Basic functionality. High stability, but slow nested-loop architecture.
-- **V6 (Classic)**: The "Proactive" base. Very fast, but prone to logic loops and lacks orb-safety.
-- **V8 (Strict Agent)**: Failed experiment with complex screen classification. Too rigid for small resolutions.
-- **V9 (Hardened Hybrid)**: **Current Production Candidate.** Combines the speed of V6 with the safety gates and hardened recovery of V8. 
-
----
-
-## 🌟 Key Features (V9)
-
-*   **Snapshot Architecture**: Captures the screen once per loop and performs all matching in memory (<10ms). Zero lag, zero stutter.
-*   **Zero-Latency Refocusing**: Restores window focus in `< 2ms`, allowing the bot to run completely silent while you work in other windows.
-*   **Orb Protection (Phase Gates)**: Strictly forbids clicking `okay.png` during live runs. Will never spend your orbs on accidental revives.
-*   **Progress-Only Watchdog**: Only resets the hang timer when real quest progress is made. Prevents "Loop Blindness" where other bots would stay stuck in the menu forever.
-*   **Resolution-Resilient**: Scans the full game window with no restrictive masking. Works perfectly on small or scaled windows (e.g., 806x482).
-*   **Autonomous Search**: No longer waits for timeouts. Proactively refreshes the room list if no valid targets are found.
+*   **Fast & Silent Xlib Engine**: Uses root-relative Xlib injection. The bot clicks without moving your physical mouse cursor and restores focus to your active window in `<20ms`. You can work entirely uninterrupted while it farms.
+*   **V2 Coordinate Accuracy**: Calculates click offsets using `self.region[0]` (physical screen space) rather than OS-level `geom` to perfectly bypass Pop!_OS titlebar scaling.
+*   **Modal Gatekeeper**: Intelligently handles the "Select a Room Type" menu. It physically forbids clicking generic "Close" buttons while in the quest menu to prevent accidental quest exiting.
+*   **Intelligent Retry Handling**: Understands that clicking 'Retry' can lead to 3 different states (the menu, the room list, or directly into the lobby) and adapts instantly.
+*   **Orb Protection**: Strictly forbids clicking `okay.png` during live runs. Will never spend your orbs on accidental revives.
+*   **Hard Watchdog**: Features a 5-minute AFK host timeout and a 5-minute absolute stuck timeout. If the game crashes, the bot will kill the process and relaunch it via Steam.
+*   **Alignment Mode**: Run with `--alignment-mode` to save visual snapshots of exactly what the bot saw immediately before making a click decision.
 
 ## Requirements
 
 - **OS**: Linux with X11 (Wayland is not natively supported for direct input).
-- **System Tools**: `xdotool`, `wmctrl`, `xprop`, `x11-utils`.
-- **Python 3.10+**: Requires `pyautogui`, `pyscreeze`, `python-xlib`, `Pillow`.
+- **System Tools**: `xdotool`, `wmctrl`, `xprop`, `ps`, `pkill`.
+- **Python 3.10+**: Requires `mss`, `pyautogui`, `pyscreeze`, `python-xlib`, `Pillow`.
 - **Game Settings**: Bleach: Brave Souls running in **windowed mode**.
 
 ## Setup
@@ -53,19 +45,21 @@ pip install -r requirements.txt
 
 ## Usage
 
-**Run the Production Candidate (V9):**
+**Run the Sentinel (Normal Mode):**
 ```bash
 python3 bbs_bot_v9.py
 ```
 
-**Run for Debugging (Includes Screenshots):**
+**Allow Fallback Auto Rooms:**
+*(If no strict matching rooms are found, it will join any valid auto room)*
 ```bash
-python3 bbs_bot_v9.py --debug-screenshots
+python3 bbs_bot_v9.py --allow-all-auto-rooms
 ```
 
-**Run for Safety Check (Dry Run):**
+**Run for Debugging (Alignment Mode):**
+*(Saves the last 10 pre-click snapshots to `alignment_audit/`)*
 ```bash
-python3 bbs_bot_v9.py --dry-run
+python3 bbs_bot_v9.py --allow-all-auto-rooms --alignment-mode
 ```
 
 ## Known Issues
