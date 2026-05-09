@@ -488,6 +488,10 @@ class BBSBot:
         if self.find_image("closed_room_coop_quest_menu", haystack=haystack) or self.find_image("room_not_met", haystack=haystack):
             key = "closed_room_coop_quest_menu" if self.find_image("closed_room_coop_quest_menu", haystack=haystack) else "room_not_met"
             if self.smart_click(key, "room fail", haystack=haystack): self.transition_to("SCAN_ROOMS"); return True
+        if time.time() - self.last_state_change_time > 2.0:
+            if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
+                logger.info("Room join failed silently. Refreshing.")
+                self.transition_to("SCAN_ROOMS"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_JOIN: self.transition_to("RECOVERY"); return True
         return False
 
