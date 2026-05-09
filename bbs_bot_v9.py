@@ -496,7 +496,11 @@ class BBSBot:
     def handle_finish(self, haystack=None):
         if not self._run_counted: self.run_count += 1; self._run_counted = True
         for key in ["tap1", "tap2"]:
-            if self.find_image(key, haystack=haystack): return self.smart_click(key, f"reward {key}", haystack=haystack)
+            if self.find_image(key, haystack=haystack):
+                if self.smart_click(key, f"reward {key}", haystack=haystack):
+                    time.sleep(self.config.WAIT_STABILIZE_ANIMATION)
+                    return True
+                return False
         if self.find_image("retry", haystack=haystack):
             if self.smart_click("retry", "retry quest", verify_key="retry", verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD, haystack=haystack):
                 time.sleep(self.config.WAIT_POST_RETRY); self.transition_to("ENTER_ROOM_LIST"); return True
