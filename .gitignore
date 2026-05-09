@@ -29,6 +29,7 @@ CLAUDE.md
 # Screenshots
 screenshots/
 alignment_audit/
+error_snapshots/
 
 # Telemetry
 agent_telemetry/
