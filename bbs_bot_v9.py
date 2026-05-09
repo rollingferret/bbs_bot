@@ -209,6 +209,7 @@ class BBSBot:
             for f in os.listdir("alignment_audit"):
                 try: os.remove(os.path.join("alignment_audit", f))
                 except: pass
+        if not os.path.exists("error_snapshots"): os.makedirs("error_snapshots")
         logger.info("BBS Sentinel V9.37 Initialized.")
 
     def _load_templates(self):
@@ -231,6 +232,15 @@ class BBSBot:
             files = sorted([os.path.join("alignment_audit", f) for f in os.listdir("alignment_audit")], key=os.path.getmtime)
             if len(files) > 10:
                 for f in files[:-10]: os.remove(f)
+        except: pass
+
+    def save_error_snapshot(self, reason):
+        if not self.snapshot: return
+        try:
+            ts = int(time.time())
+            fname = f"error_snapshots/error_{reason}_{ts}.png"
+            self.snapshot.save(fname)
+            logger.error(f"Error snapshot saved: {fname}")
         except: pass
 
     def get_template_confidence(self, key):
@@ -533,6 +543,7 @@ class BBSBot:
         if self.state != state:
             logger.info(f"TRANSITION: {self.state} -> {state}"); old = self.state; self.state = state; self.last_state_change_time = time.time()
             if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"to_{state}")
+            if state == "RECOVERY": self.save_error_snapshot(f"recovery_from_{old}")
             if state == "RUNNING": self.reset_quest_watchdog("running")
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
             if state in ["MENU", "READY", "CHECK_RUN_START", "ENTER_ROOM_LIST"]: self._run_counted = False
@@ -549,6 +560,7 @@ class BBSBot:
         self.expected_okay_context = None; self.transition_to("MENU"); return True
 
     def recover_game(self):
+        self.save_error_snapshot("hard_recover_game")
         self.consecutive_recovery_count += 1
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES: sys.exit(1)
         subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL)
@@ -629,6 +641,7 @@ class BBSBot:
                 time.sleep(self.config.POLL_MAIN_LOOP)
             except Exception as e:
                 logger.exception("Loop Error:")
+                self.save_error_snapshot("fatal_loop_error")
                 self.transition_to("RECOVERY")
                 time.sleep(1)
         self.log_session_summary()
