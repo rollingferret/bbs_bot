@@ -1,6 +1,7 @@
 import argparse
 import logging
 import math
+import os
 import random
 import subprocess
 import sys
@@ -12,7 +13,7 @@ import mss  # type: ignore
 import pyautogui  # type: ignore
 import pyscreeze  # type: ignore
 from PIL import Image
-from Xlib import X, display, protocol  # type: ignore
+from Xlib import display, X, protocol  # type: ignore
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -28,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class BotConfiguration:
-    """Centralized configuration for the BBS Bot V9.0 'Hardened Sentinel'."""
+    """Centralized configuration for the BBS Bot V9.0 'Sentinel'."""
 
     RAW_TITLE: str = "Bleach: Brave Souls"
     CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
@@ -98,6 +99,7 @@ class BotConfiguration:
 
     # Flags
     TAKE_DEBUG_SCREENSHOTS: bool = False
+    ALIGNMENT_MODE: bool = False
     MANAGE_INGAME_AUTO: bool = True
     USE_WMCTRL_ALWAYS_ON_TOP: bool = True
 
@@ -145,6 +147,7 @@ class BotConfiguration:
             self.WAIT_ROOM_LOAD = s["WAIT_ROOM_LOAD"]
             self.WAIT_SEARCH_AGAIN = s["WAIT_SEARCH_AGAIN"]
             self.WAIT_LOBBY_READY = s["WAIT_LOBBY_READY"]
+            self.WAIT_POST_RETRY = 1.0
             self.WAIT_REFOCUS = s.get("WAIT_REFOCUS", 0.02)
             self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
             self.WAIT_STABILIZE_ANIMATION = s["WAIT_STABILIZE_ANIMATION"]
@@ -160,7 +163,7 @@ def human_delay(profile, fatigue=1.0, safety_factor=0.05):
 class GameWindowNotFoundError(Exception): pass
 
 class BBSBot:
-    """BBS Sentinel V9.27 - Silent Xlib + V6 Refocus Reclaim Build."""
+    """BBS Sentinel V9.37 - V6 Speed + V2 Accuracy."""
     RECOVERY_MAP = [
         ("READY", "ready"), ("RUNNING", "ingame_auto_on"), ("RUNNING", "ingame_auto_off"),
         ("CHECK_RUN_START", "retire"), ("FINISH", "tap1"), ("FINISH", "tap2"), ("FINISH", "retry"),
@@ -184,6 +187,7 @@ class BBSBot:
         self.fatigue_modifier, self._last_popup_check = 1.0, 0.0
         self._last_property_sync = self._last_id_search = 0.0
         self._run_counted = False
+        self.disconnect_retry_count = 0
         self.handlers = {
             "MENU": self.handle_menu, "ENTER_ROOM_LIST": self.handle_enter_room_list,
             "SCAN_ROOMS": self.handle_scan_rooms, "JOIN_PENDING": self.handle_join_pending,
@@ -200,7 +204,8 @@ class BBSBot:
             self.sct = mss.mss()
         except:
             logger.error("FATAL: X11/MSS Init Error"); sys.exit(1)
-        logger.info("BBS Sentinel V9.27 'Silent Refocus' Initialized.")
+        if not os.path.exists("alignment_audit"): os.makedirs("alignment_audit")
+        logger.info("BBS Sentinel V9.37 Initialized.")
 
     def _load_templates(self):
         if not self.config.TEMPLATES: return
@@ -213,8 +218,19 @@ class BBSBot:
             if subprocess.run(["which", cmd], capture_output=True).returncode != 0:
                 logger.error(f"FATAL: Missing {cmd}"); sys.exit(1)
 
+    def save_debug_screenshot(self, name):
+        if not self.snapshot: return
+        try:
+            ts = int(time.time())
+            fname = f"alignment_audit/{name}_{ts}.png"
+            self.snapshot.save(fname)
+            files = sorted([os.path.join("alignment_audit", f) for f in os.listdir("alignment_audit")], key=os.path.getmtime)
+            if len(files) > 10:
+                for f in files[:-10]: os.remove(f)
+        except: pass
+
     def get_template_confidence(self, key):
-        c = {"open_coop_quest": 0.90, "coop_quest": 0.90, "coop_1": 0.85, "ready": 0.95, "disconnect_retry": 0.99}
+        c = {"open_coop_quest": 0.90, "coop_quest": 0.90, "coop_1": 0.85, "ready": 0.95, "disconnect_retry": 0.90, "unavailable_close": 0.95}
         return c.get(key, self.config.CONF_NORMAL)
 
     def find_image(self, key, confidence=None, region=None, haystack=None):
@@ -285,19 +301,17 @@ class BBSBot:
         if self.region:
             click_x = max(self.region[0], min(click_x, self.region[0] + self.region[2] - 1))
             click_y = max(self.region[1], min(click_y, self.region[1] + self.region[3] - 1))
-
-        # Mechanisms Restoration: Capture Focus -> Xlib Silent Click -> Restore Focus
+        if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"pre_click_{description.replace(' ', '_')}")
         cur_focus = None
         try: cur_focus = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
         except: pass
-        
         success = self._send_x11_click(click_x, click_y)
-        logger.info(f"CLICK Silent [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
-        
+        logger.info(f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
         if success and cur_focus:
             time.sleep(self.config.WAIT_REFOCUS)
-            subprocess.run(["xdotool", "windowfocus", cur_focus, "windowactivate", "--sync", cur_focus, "windowraise", cur_focus], check=False, stderr=subprocess.DEVNULL)
-
+            try:
+                subprocess.run(["xdotool", "windowfocus", cur_focus, "windowactivate", "--sync", cur_focus, "windowraise", cur_focus], check=False, stderr=subprocess.DEVNULL)
+            except: pass
         if success and verify_key:
             start, limit = time.time(), (verify_timeout or self.config.TIMEOUT_VERIFY_UI)
             while time.time() - start < limit:
@@ -311,17 +325,30 @@ class BBSBot:
         return success
 
     def _send_x11_click(self, x, y):
-        """Silent Xlib direct click (Invisible Pilot)."""
+        """Mechanically identical to V6: Silent Xlib injection."""
         try:
             if not self.win_id or not self.region: return False
             window = self.disp.create_resource_object("window", int(self.win_id))
-            # V2 Math: Use root-relative offset
-            rx, ry = x - self.region[0], y - self.region[1]
-            details = {"root": self.disp.screen().root, "window": window, "same_screen": 1, "child": X.NONE,
-                       "root_x": x, "root_y": y, "event_x": rx, "event_y": ry, "state": 0, "detail": 1, "time": int(time.time() * 1000) & 0xFFFFFFFF}
+            # V2 Accuracy: Use physical screen region offset to bypass OS titlebar scaling
+            rel_x, rel_y = x - self.region[0], y - self.region[1]
+            details = {
+                "root": self.disp.screen().root,
+                "window": window,
+                "same_screen": 1,
+                "child": X.NONE,
+                "root_x": x,
+                "root_y": y,
+                "event_x": rel_x,
+                "event_y": rel_y,
+                "state": 0,
+                "detail": 1,
+                "time": int(time.time() * 1000) & 0xFFFFFFFF,
+            }
             window.send_event(protocol.event.ButtonPress(**details), propagate=True)
             window.send_event(protocol.event.ButtonRelease(**details), propagate=True)
-            self.disp.flush(); self.disp.sync(); return True
+            self.disp.flush()
+            self.disp.sync()
+            return True
         except: return False
 
     def is_safe_room_okay_context(self, haystack=None):
@@ -334,12 +361,22 @@ class BBSBot:
         now = time.time()
         if now - self._last_popup_check < self.config.POLL_POPUP: return False
         self._last_popup_check = now
-        blocked = ["close", "unavailable_close", "room_not_met", "closed_room_coop_quest_menu"] if self.state == "ENTER_ROOM_LIST" else []
+        
+        # V9.34 Surgical Block: Only block the generic modal 'close' button.
+        # We MUST allow 'unavailable_close' and others even in ENTER_ROOM_LIST 
+        # because those are real errors.
+        blocked = ["close"] if self.state in ["ENTER_ROOM_LIST"] else []
+        
         for key in ["disconnect_retry", "closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "close_news", "okay", "close"]:
             if key in blocked: continue
             if key == "okay" and not self.is_safe_room_okay_context(haystack): continue
-            if self.find_image(key, haystack=haystack):
+            
+            # Use high confidence for generic Close to avoid menu confusion
+            conf = 0.85 if key == "close" else self.get_template_confidence(key)
+
+            if self.find_image(key, confidence=conf, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
+                if key == "disconnect_retry": self.disconnect_retry_count += 1
                 self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack)
                 if key in ["closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "okay", "close"]:
                     self.search_start_time = time.time()
@@ -361,21 +398,23 @@ class BBSBot:
         return False
 
     def handle_enter_room_list(self, haystack=None):
+        # Case A: We are on the 'Select a Room Type' menu
         if self.find_image("enter_room_button", haystack=haystack):
-            return self.smart_click(
-                "enter_room_button", "enter room list", haystack=haystack
-            )
-
-        # If we see the room list in current snapshot, transition immediately
-        if self.find_image("auto", haystack=haystack) or self.find_image(
-            "search_again", haystack=haystack
-        ):
+            # V9.36: Stay in ENTER_ROOM_LIST after click so 'close' button is blocked
+            if self.smart_click("enter_room_button", "enter room list", haystack=haystack): 
+                return True
+        
+        # Case B: We skipped the menu and went straight to rooms (common after retry)
+        if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
             self.transition_to("SCAN_ROOMS")
             return True
-
-        if time.time() - self.last_state_change_time > 2.0:
-            self.transition_to("RECOVERY")
+            
+        # Case C: We successfully re-joined via retry and are now in the lobby
+        if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack):
+            self.transition_to("READY")
             return True
+
+        if time.time() - self.last_state_change_time > 10.0: self.transition_to("RECOVERY"); return True
         return False
 
     def handle_scan_rooms(self, haystack=None):
@@ -460,7 +499,7 @@ class BBSBot:
             if self.find_image(key, haystack=haystack): return self.smart_click(key, f"reward {key}", haystack=haystack)
         if self.find_image("retry", haystack=haystack):
             if self.smart_click("retry", "retry quest", verify_key="retry", haystack=haystack):
-                time.sleep(1.5); self.transition_to("ENTER_ROOM_LIST"); return True
+                time.sleep(self.config.WAIT_POST_RETRY); self.transition_to("ENTER_ROOM_LIST"); return True
         return False
 
     def handle_game_startup(self, haystack=None):
@@ -470,6 +509,7 @@ class BBSBot:
         return False
 
     def handle_recovery(self, haystack=None):
+        if self.config.ALIGNMENT_MODE: self.save_debug_screenshot("lost_in_recovery")
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK: self.recover_game(); return True
         for s, t in self.RECOVERY_MAP:
             if self.find_image(t, haystack=haystack): self.transition_to(s); return True
@@ -482,6 +522,7 @@ class BBSBot:
     def transition_to(self, state):
         if self.state != state:
             logger.info(f"TRANSITION: {self.state} -> {state}"); old = self.state; self.state = state; self.last_state_change_time = time.time()
+            if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"to_{state}")
             if state == "RUNNING": self.reset_quest_watchdog("running")
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
             if state in ["MENU", "READY", "CHECK_RUN_START", "ENTER_ROOM_LIST"]: self._run_counted = False
@@ -575,13 +616,22 @@ class BBSBot:
                 time.sleep(self.config.POLL_MAIN_LOOP)
             except KeyboardInterrupt: break
             except Exception as e: logger.error(f"Loop Error: {e}"); self.transition_to("RECOVERY"); time.sleep(1)
+        self.log_session_summary()
+
+    def log_session_summary(self):
+        elapsed = time.time() - self.start_time
+        h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
+        logger.info(f"--- SESSION SUMMARY --- \nTime: {int(h)}h {int(m)}m {int(s)}s\nRuns: {self.run_count}\nAvg: {elapsed/60/max(1,self.run_count):.2f}m\nDisconnects: {self.disconnect_retry_count}\n-----------------------")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--test-restart", action="store_true")
     parser.add_argument("--allow-all-auto-rooms", action="store_true")
+    parser.add_argument("--alignment-mode", action="store_true")
     args = parser.parse_args()
     bot = BBSBot()
     if args.allow_all_auto_rooms: bot.config.ALLOW_ALL_AUTO_ROOMS = True
+    if args.alignment_mode: bot.config.ALIGNMENT_MODE = True
     try: bot.run(test_restart=args.test_restart)
-    except Exception as e: logger.exception(f"Fatal: {e}"); sys.exit(1)
+    except KeyboardInterrupt: bot.log_session_summary(); sys.exit(0)
+    except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
