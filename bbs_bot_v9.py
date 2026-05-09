@@ -498,8 +498,10 @@ class BBSBot:
         for key in ["tap1", "tap2"]:
             if self.find_image(key, haystack=haystack): return self.smart_click(key, f"reward {key}", haystack=haystack)
         if self.find_image("retry", haystack=haystack):
-            if self.smart_click("retry", "retry quest", verify_key="retry", haystack=haystack):
+            if self.smart_click("retry", "retry quest", verify_key="retry", verify_timeout=self.config.TIMEOUT_ROOM_LIST_LOAD, haystack=haystack):
                 time.sleep(self.config.WAIT_POST_RETRY); self.transition_to("ENTER_ROOM_LIST"); return True
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_TAP_VERIFY:
+            self.transition_to("RECOVERY"); return True
         return False
 
     def handle_game_startup(self, haystack=None):
@@ -564,12 +566,15 @@ class BBSBot:
                     except: continue
                 if valid_wid: self.win_id = valid_wid
                 self._last_id_search = now
-            if not self.win_id: raise GameWindowNotFoundError()
+            if not self.win_id: raise GameWindowNotFoundError("Window ID not found")
             geo = subprocess.check_output(["xdotool", "getwindowgeometry", "--shell", self.win_id], text=True)
             g = {line.split("=")[0]: int(line.split("=")[1]) for line in geo.splitlines() if "=" in line}
             if g.get("WIDTH", 0) > 100: self.win_id, self.region = self.win_id, (g["X"], g["Y"], g["WIDTH"], g["HEIGHT"]); return self.region
-            raise GameWindowNotFoundError()
-        except: raise GameWindowNotFoundError()
+            raise GameWindowNotFoundError("Window geometry invalid")
+        except Exception as e:
+            if not isinstance(e, GameWindowNotFoundError):
+                logger.debug(f"get_game_region error: {e}")
+            raise GameWindowNotFoundError(str(e))
 
     def setup_window_properties(self):
         if self.win_id and self.config.USE_WMCTRL_ALWAYS_ON_TOP:
@@ -614,14 +619,28 @@ class BBSBot:
                 if handler and handler(self.snapshot): continue
                 if self.handle_global_popups(self.snapshot): continue
                 time.sleep(self.config.POLL_MAIN_LOOP)
-            except KeyboardInterrupt: break
-            except Exception as e: logger.error(f"Loop Error: {e}"); self.transition_to("RECOVERY"); time.sleep(1)
+            except Exception as e:
+                logger.exception("Loop Error:")
+                self.transition_to("RECOVERY")
+                time.sleep(1)
         self.log_session_summary()
 
     def log_session_summary(self):
         elapsed = time.time() - self.start_time
-        h, m, s = elapsed // 3600, (elapsed % 3600) // 60, elapsed % 60
-        logger.info(f"--- SESSION SUMMARY --- \nTime: {int(h)}h {int(m)}m {int(s)}s\nRuns: {self.run_count}\nAvg: {elapsed/60/max(1,self.run_count):.2f}m\nDisconnects: {self.disconnect_retry_count}\n-----------------------")
+        h, m, s = int(elapsed // 3600), int((elapsed % 3600) // 60), int(elapsed % 60)
+        avg_run = (elapsed / 60.0) / max(1, self.run_count)
+        
+        summary = (
+            "\n" + "="*35 + "\n"
+            "   🏆 BBS SENTINEL SUMMARY 🏆\n"
+            + "="*35 + "\n"
+            f" ⏱️  Uptime       : {h:02d}h {m:02d}m {s:02d}s\n"
+            f" ⚔️  Quests Cleared: {self.run_count}\n"
+            f" ⚡  Avg Time/Run : {avg_run:.2f} mins\n"
+            f" 🔌  Disconnects  : {self.disconnect_retry_count}\n"
+            + "="*35
+        )
+        logger.info(summary)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
