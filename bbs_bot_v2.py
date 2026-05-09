@@ -12,9 +12,7 @@ from Xlib import X, display, protocol
 
 class GameWindowNotFoundError(Exception):
     """Custom exception raised when the game window cannot be found."""
-
     pass
-
 
 class BBSBot:
     def __init__(self):
@@ -72,10 +70,8 @@ class BBSBot:
         self.AUTO_ICON_MIN_DISTANCE = 60
         self.ROOM_MATCHING_WEIGHT_FACTOR = 0.1
         self.MAX_RULE_DISTANCE = 100
-        self.TAKE_DEBUG_SCREENSHOTS = False  # New flag to control debug screenshots
-        self.MANAGE_INGAME_AUTO = (
-            True  # Toggle to control if bot manages the in-game auto button
-        )
+        self.TAKE_DEBUG_SCREENSHOTS = False # New flag to control debug screenshots
+        self.MANAGE_INGAME_AUTO = True # Toggle to control if bot manages the in-game auto button
 
         self.TEMPLATES = {
             "game_start": "images/game_start.png",
@@ -98,7 +94,6 @@ class BBSBot:
             "tap1": "images/tap1.png",
             "tap2": "images/tap2.png",
             "retry": "images/retry.png",
-            "disconnect_retry": "images/disconnect_rerty.png",
         }
 
         os.makedirs("screenshots", exist_ok=True)
@@ -112,14 +107,10 @@ class BBSBot:
         self.MAX_STUCK_COUNT = 3  # Max times to be "stuck" in a row before full restart
         self.STUCK_TIMEOUT = 300  # Seconds (5 minutes)
         self.last_state_change_time = time.time()
-        self.WINDOW_NOT_FOUND_RETRIES = (
-            5  # Number of times to retry finding the window before forcing a restart
-        )
+        self.WINDOW_NOT_FOUND_RETRIES = 5  # Number of times to retry finding the window before forcing a restart
         self.current_window_not_found_count = 0
         self.start_time = time.time()
         self.MAX_KEPT_SCREENSHOTS = 50
-        self.disconnect_retry_count = 0
-        self.MAX_DISCONNECT_RETRIES = 3
 
     def get_game_region(self):
         try:
@@ -228,11 +219,7 @@ class BBSBot:
             return
 
         try:
-            files = [
-                os.path.join(folder, f)
-                for f in os.listdir(folder)
-                if f.endswith(".png")
-            ]
+            files = [os.path.join(folder, f) for f in os.listdir(folder) if f.endswith(".png")]
             if len(files) <= max_files:
                 return
 
@@ -248,85 +235,9 @@ class BBSBot:
                 except OSError as e:
                     print(f"[CLEANUP] Error removing {f}: {e}")
 
-            print(
-                f"[CLEANUP] Screenshot maintenance complete. Kept last {max_files} files."
-            )
+            print(f"[CLEANUP] Screenshot maintenance complete. Kept last {max_files} files.")
         except Exception as e:
             print(f"[CLEANUP] Failed to clean up screenshots: {e}")
-
-    def handle_global_popups(self):
-        """Check for and handle global popups like disconnects and errors."""
-        popups = [
-            ("close", "General error close popup"),
-            ("closed_room_coop_quest_menu", "Room full/closed popup"),
-            ("okay", "Confirmation popup"),
-            ("disconnect_retry", "Disconnect retry popup"),
-        ]
-
-        for template_key, description in popups:
-            try:
-                # Use Elite Confidence and Narrow Region for disconnect_retry to avoid false positives
-                conf = self.TEMPLATE_CONFIDENCE_NORMAL
-                reg = self.region
-
-                if template_key == "disconnect_retry":
-                    conf = 0.99  # Ultra-high confidence
-                    # Focus on the center 50% of the screen where popups appear
-                    gx, gy, gw, gh = self.region
-                    reg = (gx + gw // 4, gy + gh // 4, gw // 2, gh // 2)
-
-                box = pyautogui.locateOnScreen(
-                    self.TEMPLATES[template_key],
-                    region=reg,
-                    confidence=conf,
-                    grayscale=False,  # Color is important for distinguishing red buttons
-                )
-                if box:
-                    self.log_run("POPUP", f"Global: {description} detected.")
-
-                    if template_key == "disconnect_retry":
-                        self.disconnect_retry_count += 1
-                        if self.disconnect_retry_count > self.MAX_DISCONNECT_RETRIES:
-                            self.log_run(
-                                "ERROR",
-                                f"Max disconnect retries ({self.MAX_DISCONNECT_RETRIES}) reached. Restarting game.",
-                            )
-                            self.disconnect_retry_count = 0
-                            self.state = "RESTART_GAME"
-                            return True
-
-                    # Click the popup button
-                    time.sleep(self.CLICK_SOAK_DELAY)
-                    random_x = random.randint(box.left, box.left + box.width - 1)
-                    random_y = random.randint(box.top, box.top + box.height - 1)
-                    self.simple_click(random_x, random_y, description)
-
-                    # Wait for the popup to disappear (prevents spamming)
-                    if not self.poll_for_invisibility(
-                        template_key, timeout=10, description=description
-                    ):
-                        self.log_run(
-                            "WARNING", f"{description} still visible after click."
-                        )
-
-                    # Extra cooling-off for network retries
-                    if template_key == "disconnect_retry":
-                        self.log_run("INFO", "Waiting 10s for network reconnection...")
-                        time.sleep(10)
-                    else:
-                        time.sleep(self.POPUP_DISMISS_DELAY)
-
-                    # Force return to menu for most popups to ensure clean state
-                    if self.state not in ["RESTART_GAME", "GAME_STARTUP"]:
-                        self.state = "MENU"
-                    return True
-            except (
-                pyscreeze.ImageNotFoundException,
-                OSError,
-                pyautogui.ImageNotFoundException,
-            ):
-                pass
-        return False
 
     def handle_exit(self):
         """Print summary statistics on exit."""
@@ -341,6 +252,8 @@ class BBSBot:
         print(f" Total Runtime: {int(hours)}h {int(minutes)}m {int(seconds)}s")
         print(f" Final State: {self.state}")
         print("=" * 40)
+
+
 
     def restart_game_and_navigate(self):
         print("[RESTART] Game appears stuck - restarting and navigating back...")
@@ -466,11 +379,6 @@ class BBSBot:
             ("close", "MENU", "Error popup detected - restarting from menu"),
             ("retire", "MENU", "Stuck in lobby - restarting from menu"),
             ("okay", "MENU", "Confirmation dialog - restarting from menu"),
-            (
-                "disconnect_retry",
-                "MENU",
-                "Disconnect retry popup - restarting from menu",
-            ),
         ]
 
         detected_states = []
@@ -671,15 +579,15 @@ class BBSBot:
                     "WARNING",
                     f"Game window not found (attempt "
                     f"{self.current_window_not_found_count}/"
-                    f"{self.WINDOW_NOT_FOUND_RETRIES}). Will retry.",
+                    f"{self.WINDOW_NOT_FOUND_RETRIES}). Will retry."
                 )
             else:
                 self.log_run(
                     "ERROR",
                     f"Game window not found after {self.WINDOW_NOT_FOUND_RETRIES} attempts. "
-                    f"Triggering game restart: {e}",
+                    f"Triggering game restart: {e}"
                 )
-                self.current_window_not_found_count = 0  # Reset for next time
+                self.current_window_not_found_count = 0 # Reset for next time
                 self.state = "RESTART_GAME"
 
     def setup_wmctrl_always_on_top(self):
@@ -688,8 +596,8 @@ class BBSBot:
             subprocess.run(
                 ["wmctrl", "-r", self.GAME_WINDOW_TITLE, "-b", "add,sticky,above"],
                 check=True,
-                capture_output=True,  # Capture output
-                text=True,  # Decode as text
+                capture_output=True, # Capture output
+                text=True,           # Decode as text
             )
             print("[WMCTRL] Game window set to sticky and always on top")
         except subprocess.CalledProcessError as e:
@@ -1018,19 +926,12 @@ class BBSBot:
         # Initial cleanup on startup
         self.cleanup_screenshots(self.MAX_KEPT_SCREENSHOTS)
 
-        print(
-            f"[WMCTRL_DEBUG] Attempting to set window properties for ID: {self.win_id} with title: '{self.GAME_WINDOW_TITLE}'"
-        )
+        print(f"[WMCTRL_DEBUG] Attempting to set window properties for ID: {self.win_id} with title: '{self.GAME_WINDOW_TITLE}'")
         print("[INFO] Press Ctrl+C to stop the bot")
 
         last_processed_state = None  # Track state from previous iteration
         while True:
             self._ensure_window_is_ready()
-
-            # Global popup check - handles disconnects, errors, etc.
-            if self.handle_global_popups():
-                continue
-
             # --- MODIFICATION START ---
             # Check for stuck state at the beginning of each loop iteration
             if (
@@ -1065,7 +966,6 @@ class BBSBot:
                         continue  # Re-evaluate state machine immediately
             else:  # State has changed, reset stuck counter and timer
                 self.stuck_counter = 0
-                self.disconnect_retry_count = 0
                 self.last_state_change_time = time.time()
 
             last_processed_state = self.state  # Update for next iteration
@@ -1595,7 +1495,7 @@ class BBSBot:
                                 print(
                                     f"[RUN {self.run_count + 1}] [RUN] Found ingame auto OFF after {elapsed:.1f}s - skipping click (MANAGE_INGAME_AUTO=False)"
                                 )
-
+                            
                             run_started = True
                             auto_found = True
                             break
@@ -2041,11 +1941,9 @@ class BBSBot:
                 # Step 10: retry to loop back
                 self.log_run("STEP", "10 - Clicking retry for next run")
                 if not self.poll_and_click(
-                    "retry",
-                    timeout=self.RETRY_BUTTON_TIMEOUT,
-                    description="retry button",
+                    "retry", timeout=self.RETRY_BUTTON_TIMEOUT, description="retry button"
                 ):
-                    self._ensure_window_is_ready()  # Ensure window is ready before potentially re-entering state logic
+                    self._ensure_window_is_ready() # Ensure window is ready before potentially re-entering state logic
                     self.state = self.try_state_recovery_or_exit("timeout_retry")
                     continue
 
@@ -2056,9 +1954,7 @@ class BBSBot:
                     f"✅ [RUN {self.run_count + 1}] Completed run #{self.run_count + 1}"
                 )
                 self.run_count += 1
-                self.cleanup_screenshots(
-                    self.MAX_KEPT_SCREENSHOTS
-                )  # Maintenance cleanup
+                self.cleanup_screenshots(self.MAX_KEPT_SCREENSHOTS) # Maintenance cleanup
                 self.restart_attempts = 0  # Reset restart counter on a successful run
                 print(f"[RUN {self.run_count}] [TRANSITION] FINISH → ENTER_ROOM_LIST")
                 time.sleep(self.FINAL_PAUSE_DELAY)

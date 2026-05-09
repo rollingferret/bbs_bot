@@ -3,6 +3,7 @@ venv/
 
 # Python cache
 __pycache__/
+.pytest_cache
 
 # mypy cache
 .mypy_cache
@@ -27,3 +28,6 @@ CLAUDE.md
 
 # Screenshots
 screenshots/
+
+# Telemetry
+agent_telemetry/

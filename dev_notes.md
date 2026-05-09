@@ -1,52 +1,39 @@
-# Engineering Log - BBS Bot (V6.5 Build)
+# Engineering Log - BBS Bot Version History & Post-Mortem
 
-## System Evolution (Trace)
-*   **V2:** Hardcoded sleeps. Poor efficiency, high stability.
-*   **V3:** High-cadence async. Fast but prone to state-drift and animation race conditions.
-*   **V5:** Unit-tested state machine. Robust but high CPU overhead due to redundant scans.
-*   **V6.5:** Refactored Vision Engine + Sub-process caching. Final production build.
+## Version Evolution: Why they failed & What we learned
 
-## Technical Problem/Solution Log
+| Version | Name | Status | Failure Mode (The "Why") | Lesson Learned |
+| :--- | :--- | :--- | :--- | :--- |
+| **V2** | Legacy | **Stable** | Slow nested loops. If a popup appeared during a sleep, the bot crashed. | Logic must be reactive, not just a sequence of sleeps. |
+| **V3** | Nuclear | **Retired** | Too aggressive. High CPU usage and would "double-click" animations. | Fast is good, but "Momentum" needs to be controlled. |
+| **V4-V5**| Prototype| **Retired** | Over-complicated state checks. High overhead for low reliability. | Complexity != Reliability. Keep handlers simple. |
+| **V6** | Classic | **Stable** | "Loop Blindness." Watchdog reset too easily; no Orb-safety (clicked OK anywhere). | Watchdog must track *Progress*, not just *States*. |
+| **V7** | Surgeon | **Failed** | "Atomic Heartbeat" was too rigid. It missed the "flow" of game transitions. | A bot needs to "stare" at animations, not just take one peek. |
+| **V8** | Agent | **Failed** | **Resolution Blindness.** Used sub-regions that failed at 806x482. Too strict (95% conf). | **Masking is brittle.** Full-window vision is the only way to be resolution-resilient. |
+| **V9** | **Hardened**| **Active** | *Current Production Candidate.* | Combines V6 Momentum with V8 Safety Gates. |
 
-### 1. Resource Exhaustion (Vision)
-*   **Problem:** Multiple `locateOnScreen` calls per loop caused 100% CPU spikes and interface stutter.
-*   **Solution:** Implemented **Single-Capture Loop**. Captures exactly one `pyautogui.screenshot(region=self.region)` per 100ms cycle.
-*   **Implementation:** All sub-checks (Auto-quadrant, Reward anchors) use coordinate math to slice the existing memory buffer.
+---
 
-### 2. Focus Jumps & Workspace Drift
-*   **Problem:** Background clicks often cause the Window Manager to steal focus or pop the taskbar.
-*   **Solution:** **Focus Capture & Reclaim**.
-*   **Implementation:** Captures the `current_focus` ID immediately before any interaction. Performs the ghost click, then instantly runs `xdotool windowactivate --sync` on the user's window. This return-handshake happens within milliseconds, preventing the OS from shifting focus.
+## Technical Problem/Solution Log (Deep Dive)
 
-### 3. Loop Latency (Shell Spawns)
-*   **Problem:** Spawning `xdotool` search processes every 100ms introduced ~40ms of kernel-level latency.
-*   **Solution:** **Window ID Caching**.
-*   **Implementation:** Caches `win_id` in memory. Uses lightweight `xprop -id` to verify window existence. Full system search only triggers every 5s (`POLL_PROPERTY_SYNC`) or if the ID becomes invalid.
+### 1. Vision Discrepancy & Speed
+*   **Discovery**: `pyautogui.locate` on a saved file returns different results than `locateOnScreen`. V8 used the slow method, adding 3s of lag.
+*   **V9 Fix**: Reverted to **Snapshot-First Vision**. One capture per loop, all checks done in-memory (<10ms).
 
-### 4. Reward Counting Drift
-*   **Problem:** Server lag often caused the bot to skip the `tap1` image, resulting in unrecorded runs.
-*   **Solution:** Authoritative **Cycle-Lock**.
-*   **Implementation:** Credits the run the moment **any** finish anchor (`tap1`, `tap2`, `retry`) is detected. Flips `_run_counted` flag to prevent duplicate credits. Lock is only reset when the bot successfully transitions back to `READY`.
+### 2. Accidental "Create Room" Entry
+*   **Discovery**: V6 would click coordinates for a room even if the list shifted. If the "Create" button moved under the mouse, it clicked it.
+*   **V9 Fix**: 
+    1.  **JOIN_PENDING State**: Immediately stops clicking the list after one snatch attempt.
+    2.  **`verify_anchor="auto"`**: Before the physical click, the bot re-scans for the "Auto" icon. If it's gone, the click is aborted.
 
-### 5. False Auto-Toggle (Flash Bug)
-*   **Problem:** Explosions in boss rooms matched the Grey (OFF) template at standard confidence, causing the bot to turn Auto OFF.
-*   **Solution:** **Dual-Confidence Filter**.
-*   **Implementation:** Checks for Green (ON) first at 0.85 (Forgiving). If found, exits. Only checks for Grey (OFF) at 0.995 (Strict).
+### 3. The "Orb-Vampire" Bug
+*   **Discovery**: In V2-V6, the bot would click `okay.png` anywhere. If you died in a run, it would spend Orbs to revive.
+*   **V9 Fix**: **Phase-Gated Safety**. The `can_click` logic blocks `okay` clicks unless the bot is in `SCAN_ROOMS` or a verified `RETIREMENT`. 
 
-### 6. Logic Drift (Over-Engineering)
-*   **Problem:** Attempted "Coordinate Masks" and "Height Cutoffs" blinded the bot to rooms at the bottom of the list.
-*   **Solution:** **Raw Restoration**. 
-*   **Implementation:** Reverted to full-window scanning for room detection to match the successful overnight build. Removed all aggressive masks that were causing false-negative room rejections.
+### 4. Watchdog "Fake Progress"
+*   **Discovery**: Bots were resetting their "Hang Timer" just by seeing the Menu. This meant they could loop `Menu -> Error -> Menu` for 10 hours without restarting.
+*   **V9 Fix**: Watchdog timer only resets when a run is **Actually Started** (`entered_running`) or **Completed** (`run_completed`).
 
-## Validation Standards
-*   **Type Integrity:** 100% `mypy` verified to prevent `NoneType` crashes during long-duration sessions.
-*   **Linting:** 100% `ruff` (PEP 8) compliant.
-*   **Unit Tests:** `test_v5_logic.py` validates matching math independently of the X11 environment.
-
-## 2026-05-06: V7 "The Surgeon" Implementation
-- Abandoned V6 nested-loop architecture due to race conditions and CPU spikes.
-- Implemented "Atomic Heartbeat": Snapshot -> Action -> Return.
-- Fixed logic leak where V6 handlers took extra screenshots outside the snapshot engine.
-- Implemented Passive Shielding: xprop check for IconicState before windowraise.
-- Verified focus-reclaim parity with V6.
-- Fixed handler return types for better flow control.
+### 5. UI "State Thrashing"
+*   **Discovery**: Bots were jumping between states faster than the game could animate (e.g. `FINISH -> RECOVERY -> FINISH`).
+*   **V9 Fix**: **`is_screen_stable`**. The bot verifies the pixels have stopped moving for 100ms before it trusts a transition to a new screen.
