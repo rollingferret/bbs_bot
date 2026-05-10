@@ -44,9 +44,9 @@ class BotConfiguration:
     WAIT_SEARCH_AGAIN: float = 1.5
     WAIT_LOBBY_READY: float = 0.3
     WAIT_REFOCUS: float = 0.02
-    WAIT_REFRESH_COOLDOWN: float = 2.0
+    WAIT_REFRESH_COOLDOWN: float = 2.5
     DELAY_POST_POPUP: float = 0.3
-    WAIT_STABILIZE_ANIMATION: float = 0.8
+    WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
     WAIT_RESTART: float = 5.0
 
@@ -61,14 +61,14 @@ class BotConfiguration:
     TIMEOUT_LOBBY_JOIN: float = 10.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
     TIMEOUT_SCAN_IDLE: float = 20.0
-    TIMEOUT_VERIFY_UI: float = 0.8
+    TIMEOUT_VERIFY_UI: float = 2.0
 
     # Vision
     CONF_NORMAL: float = 0.80
     CONF_HIGH: float = 0.90
     CONF_READY: float = 0.95
     CONF_STARTUP: float = 0.85
-    CONF_LOOSE: float = 0.70
+    CONF_LOOSE: float = 0.68
     CONF_POPUP: float = 0.85
     CONF_VERIFY_ACTION: float = 0.80
 
@@ -172,7 +172,6 @@ class BBSBot:
         ("MENU", "open_coop_quest"), ("MENU", "coop_quest"), ("MENU", "coop_1"), ("MENU", "coop_2"),
         ("GAME_STARTUP", "game_start"), ("MENU", "closed_room_coop_quest_menu"),
         ("SCAN_ROOMS", "close"), ("SCAN_ROOMS", "unavailable_close"), ("GAME_STARTUP", "close_news"),
-        ("MENU", "disconnect_retry"),
     ]
 
     def __init__(self, config=BotConfiguration()):
@@ -403,9 +402,9 @@ class BBSBot:
                     return False
                 if key in ["closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "okay", "close"]:
                     self.search_start_time = time.time()
-                    if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY"]: self.transition_to("SCAN_ROOMS")
+                    if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY", "CHECK_RUN_START", "FINISH"]: self.transition_to("SCAN_ROOMS")
                     return True
-                if self.state != "GAME_STARTUP" and self.state not in ["RUNNING", "FINISH", "CHECK_RUN_START"]:
+                if self.state not in ["GAME_STARTUP", "RUNNING", "FINISH", "CHECK_RUN_START", "RECOVERY"]:
                     self.transition_to("MENU")
                 return True
         return False
@@ -445,6 +444,10 @@ class BBSBot:
     def handle_scan_rooms(self, haystack=None):
         if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack): self.transition_to("READY"); return True
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: self.transition_to("RECOVERY"); return True
+        
+        # Stability Pause: Wait for room list to settle
+        time.sleep(0.5)
+        
         autos = self.find_all("auto", haystack=haystack)
         if autos:
             v_rules = self.find_all("room_rules_valid", confidence=self.config.CONF_LOOSE, haystack=haystack)
@@ -455,13 +458,20 @@ class BBSBot:
             if self.config.ALLOW_ALL_AUTO_ROOMS:
                 for a in BBSBot.dedupe_autos(autos, self.config):
                     if id(a) not in matched_ids: candidates.append((a, None, "fallback"))
+            
+            # Transparency: Log the scan results
+            strict_count = sum(1 for _, _, m in candidates if m == "strict")
+            fallback_count = sum(1 for _, _, m in candidates if m == "fallback")
+            logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
+
             if candidates:
                 self.search_start_time = time.time()
                 for auto, rule, mode in candidates:
+                    label = "Auto + Rules" if mode == "strict" else "Auto Only"
                     if mode == "strict" and rule: px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
                     else: px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
                     target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
-                    if self.smart_click(target, f"snatch {mode}", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
+                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
                 return True
         if self.find_image("search_again", haystack=haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN:
@@ -478,9 +488,11 @@ class BBSBot:
             best_r, min_d = None, float("inf")
             for r in rules:
                 rx, ry = r.left + r.width // 2, r.top + r.height // 2
+                # Restore V6 Directional Logic: Rule text is physically below Auto OK
                 if ry > ay:
                     d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
-                    if d < min_d and d < config.MAX_RULE_DISTANCE: min_d, best_r = d, r
+                    if d < min_d and d < config.MAX_RULE_DISTANCE:
+                        min_d, best_r = d, r
             if best_r: valid.append((a, best_r))
         return valid
 
@@ -501,7 +513,11 @@ class BBSBot:
             if self.smart_click(key, "room fail", haystack=haystack): self.transition_to("SCAN_ROOMS"); return True
         if time.time() - self.last_state_change_time > 2.0:
             if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
-                logger.info("Room join failed silently. Refreshing.")
+                logger.info("Room join failed silently. Forcing list refresh.")
+                # Physical Refresh: Click Search Again to clear the stale list
+                if self.find_image("search_again", haystack=haystack):
+                    self.smart_click("search_again", "refresh list", haystack=haystack)
+                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN) # Wait for network load
                 self.transition_to("SCAN_ROOMS"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_JOIN: self.transition_to("RECOVERY"); return True
         return False
@@ -735,4 +751,3 @@ if __name__ == "__main__":
     try: bot.run(test_restart=args.test_restart)
     except KeyboardInterrupt: bot.log_session_summary(); sys.exit(0)
     except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
-(1)
