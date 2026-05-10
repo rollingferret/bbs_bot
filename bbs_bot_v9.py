@@ -185,6 +185,7 @@ class BBSBot:
         self.fatigue_start_time = self.last_state_change_time = self.quest_watchdog = time.time()
         self.win_id = self.region = self.snapshot = self.expected_okay_context = None
         self.consecutive_recovery_count = self.search_start_time = 0
+        self._force_refresh = False
         self.fatigue_modifier, self._last_popup_check = 1.0, 0.0
         self._last_property_sync = self._last_id_search = 0.0
         self._run_counted = False
@@ -400,10 +401,22 @@ class BBSBot:
                 if key == "disconnect_retry": self.disconnect_retry_count += 1
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
-                if key in ["closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "okay", "close"]:
+                
+                # V9.48: Realignment with V6 State Truth
+                if key in ["room_not_met", "unavailable_close", "close"]:
                     self.search_start_time = time.time()
-                    if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY", "CHECK_RUN_START", "FINISH"]: self.transition_to("SCAN_ROOMS")
+                    if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY", "CHECK_RUN_START", "FINISH"]: 
+                        self.transition_to("SCAN_ROOMS"); self._force_refresh = True
                     return True
+                
+                if key in ["closed_room_coop_quest_menu", "okay"]:
+                    self.transition_to("MENU")
+                    return True
+                
+                if key == "disconnect_retry":
+                    self.transition_to("RECOVERY")
+                    return True
+
                 if self.state not in ["GAME_STARTUP", "RUNNING", "FINISH", "CHECK_RUN_START", "RECOVERY"]:
                     self.transition_to("MENU")
                 return True
@@ -464,7 +477,8 @@ class BBSBot:
             fallback_count = sum(1 for _, _, m in candidates if m == "fallback")
             logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
 
-            if candidates:
+            # Only proceed if we DON'T need a refresh
+            if candidates and not self._force_refresh:
                 self.search_start_time = time.time()
                 for auto, rule, mode in candidates:
                     label = "Auto + Rules" if mode == "strict" else "Auto Only"
@@ -473,11 +487,15 @@ class BBSBot:
                     target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
                     if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
                 return True
-        if self.find_image("search_again", haystack=haystack):
-            if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN:
-                self.search_start_time = time.time()
-                if self.smart_click("search_again", "refresh list", haystack=haystack):
-                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN); return True
+        
+        # V9.48 Flag-Based Refresh (V6 Alignment)
+        if self._force_refresh or self.find_image("search_again", haystack=haystack):
+            if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
+                if self.find_image("search_again", haystack=haystack):
+                    self.search_start_time = time.time()
+                    if self.smart_click("search_again", "refresh list", haystack=haystack):
+                        self._force_refresh = False
+                        time.sleep(self.config.WAIT_REFRESH_COOLDOWN); return True
         return False
 
     @staticmethod
