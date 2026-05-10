@@ -502,15 +502,14 @@ class BBSBot:
     def match_rooms(autos, rules, config):
         valid = []
         for a in BBSBot.dedupe_autos(autos, config):
-            ax, ay = a.left + a.width // 2, a.top + a.height // 2
-            best_r, min_d = None, float("inf")
+            _, ay = a.left + a.width // 2, a.top + a.height // 2
+            # V9 Improved Logic: Rule text must be on the same horizontal level (+/- 45px)
+            best_r, min_dy = None, float("inf")
             for r in rules:
-                rx, ry = r.left + r.width // 2, r.top + r.height // 2
-                # Restore V6 Directional Logic: Rule text is physically below Auto OK
-                if ry > ay:
-                    d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
-                    if d < min_d and d < config.MAX_RULE_DISTANCE:
-                        min_d, best_r = d, r
+                ry = r.top + r.height // 2
+                dy = abs(ry - ay)
+                if dy < 45 and dy < min_dy:
+                    min_dy, best_r = dy, r
             if best_r: valid.append((a, best_r))
         return valid
 
