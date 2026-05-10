@@ -49,6 +49,10 @@ class BotConfiguration:
     WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
     WAIT_RESTART: float = 5.0
+    WAIT_STABILITY: float = 0.5
+    DELAY_SAFETY_BLOCK: float = 0.5
+    DELAY_RECOVERY_WAIT: float = 2.0
+    DELAY_FATAL_ERROR: float = 1.0
 
     # Timeouts
     TIMEOUT_STUCK: float = 300
@@ -164,7 +168,7 @@ def human_delay(profile, fatigue=1.0, safety_factor=0.05):
 class GameWindowNotFoundError(Exception): pass
 
 class BBSBot:
-    """BBS Sentinel V9.37 - V6 Speed + V2 Accuracy."""
+    """BBS Sentinel V9.50 - V6 Speed + V2 Accuracy."""
     RECOVERY_MAP = [
         ("READY", "ready"), ("RUNNING", "ingame_auto_on"), ("RUNNING", "ingame_auto_off"),
         ("CHECK_RUN_START", "retire"), ("FINISH", "tap1"), ("FINISH", "tap2"), ("FINISH", "retry"),
@@ -212,7 +216,7 @@ class BBSBot:
                 try: os.remove(os.path.join("alignment_audit", f))
                 except Exception: pass
         if not os.path.exists("error_snapshots"): os.makedirs("error_snapshots")
-        logger.info("BBS Sentinel V9.37 Initialized.")
+        logger.info("BBS Sentinel V9.50 Initialized.")
 
     def _load_templates(self):
         if not self.config.TEMPLATES: return
@@ -313,7 +317,7 @@ class BBSBot:
 
     def smart_click(self, target, description, verify_key=None, target_state=None, wait_for_appearance=False, custom_delay=None, confidence=None, haystack=None, verify_timeout=None, expected_context=None):
         if isinstance(target, str) and not self.can_click(target, expected_context=expected_context):
-            logger.error(f"SAFETY BLOCK: {target} in {self.current_phase()} phase"); time.sleep(0.5); return False
+            logger.error(f"SAFETY BLOCK: {target} in {self.current_phase()} phase"); time.sleep(self.config.DELAY_SAFETY_BLOCK); return False
         human_delay(custom_delay or self.config.DELAY_COGNITIVE, self.fatigue_modifier, self.config.SAFETY_FLOOR_FACTOR)
         conf = confidence or self.get_template_confidence(target if isinstance(target, str) else "")
         box = self.find_image(target, confidence=conf, haystack=haystack) if isinstance(target, str) else target
@@ -401,22 +405,11 @@ class BBSBot:
                 if key == "disconnect_retry": self.disconnect_retry_count += 1
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
-                
-                # V9.48: Realignment with V6 State Truth
-                if key in ["room_not_met", "unavailable_close", "close"]:
+                if key in ["closed_room_coop_quest_menu", "room_not_met", "unavailable_close", "okay", "close"]:
                     self.search_start_time = time.time()
                     if self.state in ["SCAN_ROOMS", "JOIN_PENDING", "READY", "CHECK_RUN_START", "FINISH"]: 
                         self.transition_to("SCAN_ROOMS"); self._force_refresh = True
                     return True
-                
-                if key in ["closed_room_coop_quest_menu", "okay"]:
-                    self.transition_to("MENU")
-                    return True
-                
-                if key == "disconnect_retry":
-                    self.transition_to("RECOVERY")
-                    return True
-
                 if self.state not in ["GAME_STARTUP", "RUNNING", "FINISH", "CHECK_RUN_START", "RECOVERY"]:
                     self.transition_to("MENU")
                 return True
@@ -459,13 +452,13 @@ class BBSBot:
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: self.transition_to("RECOVERY"); return True
         
         # Stability Pause: Wait for room list to settle
-        time.sleep(0.5)
+        time.sleep(self.config.WAIT_STABILITY)
         
         autos = self.find_all("auto", haystack=haystack)
+        candidates = []
         if autos:
             v_rules = self.find_all("room_rules_valid", confidence=self.config.CONF_LOOSE, haystack=haystack)
             valid = BBSBot.match_rooms(autos, v_rules, self.config)
-            candidates = []
             matched_ids = set()
             for auto, rule in valid: candidates.append((auto, rule, "strict")); matched_ids.add(id(auto))
             if self.config.ALLOW_ALL_AUTO_ROOMS:
@@ -477,18 +470,23 @@ class BBSBot:
             fallback_count = sum(1 for _, _, m in candidates if m == "fallback")
             logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
 
-            # Only proceed if we DON'T need a refresh
+            # V9.50 Atomic Decision: Only attempt the top candidate and then RE-SCAN fresh.
+            # Only proceed if we DON'T need a forced refresh
             if candidates and not self._force_refresh:
                 self.search_start_time = time.time()
-                for auto, rule, mode in candidates:
-                    label = "Auto + Rules" if mode == "strict" else "Auto Only"
-                    if mode == "strict" and rule: px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
-                    else: px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
-                    target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
-                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
-                return True
+                auto, rule, mode = candidates[0]
+                label = "Auto + Rules" if mode == "strict" else "Auto Only"
+                
+                if mode == "strict" and rule: px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
+                else: px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
+                
+                target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
+                
+                if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): 
+                    self.transition_to("JOIN_PENDING")
+                return True # Atomic reset: return to main loop for a fresh screenshot
         
-        # V9.48 Flag-Based Refresh (V6 Alignment)
+        # Flag-Based Refresh (V6 Alignment)
         if self._force_refresh or self.find_image("search_again", haystack=haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
                 if self.find_image("search_again", haystack=haystack):
@@ -502,15 +500,14 @@ class BBSBot:
     def match_rooms(autos, rules, config):
         valid = []
         for a in BBSBot.dedupe_autos(autos, config):
-            ax, ay = a.left + a.width // 2, a.top + a.height // 2
-            best_r, min_d = None, float("inf")
+            _, ay = a.left + a.width // 2, a.top + a.height // 2
+            # V9 Improved Logic: Rule text must be on the same horizontal level (+/- 45px)
+            best_r, min_dy = None, float("inf")
             for r in rules:
-                rx, ry = r.left + r.width // 2, r.top + r.height // 2
-                # Restore V6 Directional Logic: Rule text is physically below Auto OK
-                if ry > ay:
-                    d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
-                    if d < min_d and d < config.MAX_RULE_DISTANCE:
-                        min_d, best_r = d, r
+                ry = r.top + r.height // 2
+                dy = abs(ry - ay)
+                if dy < 45 and dy < min_dy:
+                    min_dy, best_r = dy, r
             if best_r: valid.append((a, best_r))
         return valid
 
@@ -526,17 +523,13 @@ class BBSBot:
         if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
             time.sleep(self.config.DELAY_READY)
             return self.smart_click("ready", "snap ready", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
-        if self.find_image("closed_room_coop_quest_menu", haystack=haystack) or self.find_image("room_not_met", haystack=haystack):
-            key = "closed_room_coop_quest_menu" if self.find_image("closed_room_coop_quest_menu", haystack=haystack) else "room_not_met"
-            if self.smart_click(key, "room fail", haystack=haystack): self.transition_to("SCAN_ROOMS"); return True
+        
+        # Silent failure: still looking at room list after 2s
         if time.time() - self.last_state_change_time > 2.0:
             if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
-                logger.info("Room join failed silently. Forcing list refresh.")
-                # Physical Refresh: Click Search Again to clear the stale list
-                if self.find_image("search_again", haystack=haystack):
-                    self.smart_click("search_again", "refresh list", haystack=haystack)
-                    time.sleep(self.config.WAIT_REFRESH_COOLDOWN) # Wait for network load
+                logger.info("Room join failed silently. Triggering fresh search.")
                 self.transition_to("SCAN_ROOMS"); return True
+
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_JOIN: self.transition_to("RECOVERY"); return True
         return False
 
@@ -604,11 +597,17 @@ class BBSBot:
 
     def transition_to(self, state):
         if self.state != state:
-            logger.info(f"TRANSITION: {self.state} -> {state}"); old = self.state; self.state = state; self.last_state_change_time = time.time()
+            logger.info(f"TRANSITION: {self.state} -> {state}")
+            old = self.state; self.state = state; self.last_state_change_time = time.time()
             if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"to_{state}")
-            if state == "RECOVERY": self.save_error_snapshot(f"recovery_from_{old}")
-            if state in ["RUNNING", "READY"]: self.reset_quest_watchdog(state.lower())
+            if state == "RECOVERY": 
+                self.save_error_snapshot(f"recovery_from_{old}")
+                self._force_refresh = False
+            if state in ["RUNNING", "READY"]: 
+                self.reset_quest_watchdog(state.lower())
+                self._force_refresh = False
             if state == "SCAN_ROOMS": self.search_start_time = time.time()
+            if old in ["FINISH", "MENU"]: self._force_refresh = False
             if state in ["MENU", "READY", "CHECK_RUN_START", "ENTER_ROOM_LIST"]: self._run_counted = False
             if old == "FINISH" and state != "FINISH": self.reset_quest_watchdog("completed")
 
@@ -637,7 +636,7 @@ class BBSBot:
             try:
                 if self.get_game_region(): break
             except GameWindowNotFoundError:
-                time.sleep(2.0)
+                time.sleep(self.config.DELAY_RECOVERY_WAIT)
         
         self.transition_to("GAME_STARTUP")
 
@@ -719,7 +718,7 @@ class BBSBot:
             try:
                 if not self.ensure_window_ready():
                     logger.warning("Game window not found; waiting...")
-                    time.sleep(2.0)
+                    time.sleep(self.config.DELAY_RECOVERY_WAIT)
                     continue
 
                 if time.time() - last_prop_sync > self.config.POLL_PROPERTY_SYNC:
@@ -737,7 +736,7 @@ class BBSBot:
                 logger.exception("Loop Error:")
                 self.save_error_snapshot("fatal_loop_error")
                 self.transition_to("RECOVERY")
-                time.sleep(1)
+                time.sleep(self.config.DELAY_FATAL_ERROR)
         self.log_session_summary()
 
     def log_session_summary(self):
