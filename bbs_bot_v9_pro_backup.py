@@ -659,10 +659,7 @@ class BBSBot:
     def recover_game(self):
         self.save_error_snapshot("hard_recover_game")
         self.consecutive_recovery_count += 1
-        if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES:
-            logger.error("CIRCUIT BREAKER: Max consecutive recoveries reached. Exiting.")
-            self.log_session_summary()
-            sys.exit(1)
+        if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES: sys.exit(1)
         self.quest_watchdog = time.time()
         subprocess.run(["pkill", "-f", "BleachBraveSouls.exe"], stderr=subprocess.DEVNULL)
         time.sleep(self.config.WAIT_RESTART)
