@@ -63,8 +63,7 @@ class BotConfiguration:
     TIMEOUT_SCAN_IDLE: float = 20.0
     TIMEOUT_VERIFY_UI: float = 2.0
 
-    # Wait Constants
-    WAIT_DISCONNECT_COOLING: Tuple[int, int] = (8, 16)
+    # Vision
     CONF_NORMAL: float = 0.80
     CONF_HIGH: float = 0.90
     CONF_READY: float = 0.95
@@ -88,7 +87,7 @@ class BotConfiguration:
     MAX_CONSECUTIVE_RECOVERIES: int = 3
     SESSION_MAX_HOURS: int = 16
     POLL_MAIN_LOOP: float = 0.1
-    POLL_UI_VERIFY: float = 0.1
+    POLL_UI_VERIFY: float = 0.05
     POLL_POPUP: float = 0.5
     POLL_PROPERTY_SYNC: float = 5.0
     POLL_RUNNING: float = 0.5
@@ -399,12 +398,7 @@ class BBSBot:
             if self.find_image(key, confidence=conf, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
                 if key == "close_news": time.sleep(self.config.DELAY_NEWS)
-                if key == "disconnect_retry":
-                    self.disconnect_retry_count += 1
-                    cool_time = random.randint(*self.config.WAIT_DISCONNECT_COOLING)
-                    logger.warning(f"DISCONNECT: Cooling down for {cool_time}s...")
-                    time.sleep(cool_time)
-
+                if key == "disconnect_retry": self.disconnect_retry_count += 1
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
                 
@@ -462,14 +456,10 @@ class BBSBot:
 
     def handle_scan_rooms(self, haystack=None):
         if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack): self.transition_to("READY"); return True
-        
-        # V9.51: Increased idle timeout slightly to allow more scan cycles before recovery
-        if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: 
-            logger.warning("SCAN_ROOMS: Idle timeout reached. Recovering...")
-            self.transition_to("RECOVERY"); return True
+        if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: self.transition_to("RECOVERY"); return True
         
         # Stability Pause: Wait for room list to settle
-        time.sleep(0.4)
+        time.sleep(0.5)
         
         autos = self.find_all("auto", haystack=haystack)
         if autos:
@@ -485,53 +475,42 @@ class BBSBot:
             # Transparency: Log the scan results
             strict_count = sum(1 for _, _, m in candidates if m == "strict")
             fallback_count = sum(1 for _, _, m in candidates if m == "fallback")
-            if candidates:
-                logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
+            logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
 
-            # V9.51 Logic: If we found candidates, try to snatch them immediately.
-            # If a snatch click fails to trigger a transition, we don't just sit here.
+            # Only proceed if we DON'T need a refresh
             if candidates and not self._force_refresh:
-                self.search_start_time = time.time() # Reset idle timer on discovery
+                self.search_start_time = time.time()
                 for auto, rule, mode in candidates:
                     label = "Auto + Rules" if mode == "strict" else "Auto Only"
-                    if mode == "strict" and rule: 
-                        px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
-                    else: 
-                        px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
-                    
+                    if mode == "strict" and rule: px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
+                    else: px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
                     target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
-                    
-                    # V9.51: Transition to JOIN_PENDING if click is successful.
-                    # We use a verification check to ensure the room list actually changes or we enter a lobby.
-                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack):
-                        self.transition_to("JOIN_PENDING")
-                        return True
+                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
                 return True
         
-        # V9.51: Improved Refresh Logic. If no autos or force refresh, click Search Again.
+        # V9.48 Flag-Based Refresh (V6 Alignment)
         if self._force_refresh or self.find_image("search_again", haystack=haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
                 if self.find_image("search_again", haystack=haystack):
-                    # Only reset start time if we actually click refresh
+                    self.search_start_time = time.time()
                     if self.smart_click("search_again", "refresh list", haystack=haystack):
-                        self.search_start_time = time.time()
                         self._force_refresh = False
-                        time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
-                        return True
+                        time.sleep(self.config.WAIT_REFRESH_COOLDOWN); return True
         return False
 
     @staticmethod
     def match_rooms(autos, rules, config):
         valid = []
         for a in BBSBot.dedupe_autos(autos, config):
-            ay = a.top + a.height // 2
-            # V9.51: Relaxed vertical alignment (45 -> 55) to catch OSIRIS-style badges.
-            best_r, min_dy = None, float("inf")
+            ax, ay = a.left + a.width // 2, a.top + a.height // 2
+            best_r, min_d = None, float("inf")
             for r in rules:
-                ry = r.top + r.height // 2
-                dy = abs(ry - ay)
-                if dy < 55 and dy < min_dy:
-                    min_dy, best_r = dy, r
+                rx, ry = r.left + r.width // 2, r.top + r.height // 2
+                # Restore V6 Directional Logic: Rule text is physically below Auto OK
+                if ry > ay:
+                    d = abs(ry - ay) + abs(rx - ax) * config.ROOM_MATCH_WEIGHT
+                    if d < min_d and d < config.MAX_RULE_DISTANCE:
+                        min_d, best_r = d, r
             if best_r: valid.append((a, best_r))
         return valid
 
@@ -613,24 +592,13 @@ class BBSBot:
         return False
 
     def handle_distraction(self, haystack=None):
-        duration = random.randint(*self.config.DISTRACTION_DURATION)
-        logger.info(f"DISTRACTION: Taking a coffee break ({duration}s)...")
-        time.sleep(duration)
-        
-        # V9.53: Surgical Watchdog Reset. 
-        # We must zero out all timers because the 2-8 min sleep would otherwise
-        # leave us with very little 'budget' before a hard restart (10m).
-        self.reset_quest_watchdog("post-break") 
-        self.search_start_time = time.time()
-        self.last_state_change_time = time.time()
-        
+        logger.info("DISTRACTION: Sleeping..."); time.sleep(random.randint(*self.config.DISTRACTION_DURATION))
+        self.quest_watchdog = time.time()
         self.fatigue_start_time = time.time()
         self.active_profile = "SHIKAI_MAX"
         self.config._apply_profile(self.active_profile)
         if self.config.CIRCADIAN_PROFILES:
             self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
-        
-        # V9.53: Transition to RECOVERY to allow the bot to find its way back to the quest list.
         self.transition_to("RECOVERY")
         return True
 
@@ -728,21 +696,13 @@ class BBSBot:
             old = self.active_profile
             self.active_profile = "SHIKAI_NORMAL" if old == "SHIKAI_MAX" else "SHIKAI_MAX"
             self.config._apply_profile(self.active_profile)
-            
             if self.config.CIRCADIAN_PROFILES:
                 duration = random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
                 self.next_profile_swap = time.time() + duration
                 logger.info(f"CIRCADIAN SHIFT: {self.active_profile} for {duration/60:.0f}m")
-            
-            # V9.52: Targeted Fatigue Flow
-            # When we shift from MAX to NORMAL, we schedule a break to occur after a few "tired" runs.
             if old == "SHIKAI_MAX" and self.active_profile == "SHIKAI_NORMAL":
                 self.next_distraction_run = self.run_count + random.randint(*self.config.CASUAL_LINGER_RUNS)
-                logger.info(f"FATIGUE: Shift to NORMAL. Break scheduled after run #{self.next_distraction_run}.")
-            
-            # If we were in NORMAL and it's time to swap, but we haven't hit the break yet,
-            # we force the swap back to MAX only AFTER the distraction handler does it.
-            # This ensures we don't 'skip' the break if the NORMAL timer is too long.
+                logger.info(f"FATIGUE: Break after run #{self.next_distraction_run}.")
 
     def check_session_limit(self):
         if (time.time() - self.start_time) / 3600 >= self.config.SESSION_MAX_HOURS: sys.exit(0)
