@@ -456,10 +456,14 @@ class BBSBot:
 
     def handle_scan_rooms(self, haystack=None):
         if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack): self.transition_to("READY"); return True
-        if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: self.transition_to("RECOVERY"); return True
+        
+        # V9.51: Increased idle timeout slightly to allow more scan cycles before recovery
+        if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: 
+            logger.warning("SCAN_ROOMS: Idle timeout reached. Recovering...")
+            self.transition_to("RECOVERY"); return True
         
         # Stability Pause: Wait for room list to settle
-        time.sleep(0.5)
+        time.sleep(0.4)
         
         autos = self.find_all("auto", haystack=haystack)
         if autos:
@@ -475,40 +479,52 @@ class BBSBot:
             # Transparency: Log the scan results
             strict_count = sum(1 for _, _, m in candidates if m == "strict")
             fallback_count = sum(1 for _, _, m in candidates if m == "fallback")
-            logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
+            if candidates:
+                logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
 
-            # Only proceed if we DON'T need a refresh
+            # V9.51 Logic: If we found candidates, try to snatch them immediately.
+            # If a snatch click fails to trigger a transition, we don't just sit here.
             if candidates and not self._force_refresh:
-                self.search_start_time = time.time()
+                self.search_start_time = time.time() # Reset idle timer on discovery
                 for auto, rule, mode in candidates:
                     label = "Auto + Rules" if mode == "strict" else "Auto Only"
-                    if mode == "strict" and rule: px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
-                    else: px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
+                    if mode == "strict" and rule: 
+                        px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
+                    else: 
+                        px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
+                    
                     target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
-                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack): self.transition_to("JOIN_PENDING"); return True
+                    
+                    # V9.51: Transition to JOIN_PENDING if click is successful.
+                    # We use a verification check to ensure the room list actually changes or we enter a lobby.
+                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack):
+                        self.transition_to("JOIN_PENDING")
+                        return True
                 return True
         
-        # V9.48 Flag-Based Refresh (V6 Alignment)
+        # V9.51: Improved Refresh Logic. If no autos or force refresh, click Search Again.
         if self._force_refresh or self.find_image("search_again", haystack=haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
                 if self.find_image("search_again", haystack=haystack):
-                    self.search_start_time = time.time()
+                    # Only reset start time if we actually click refresh
                     if self.smart_click("search_again", "refresh list", haystack=haystack):
+                        self.search_start_time = time.time()
                         self._force_refresh = False
-                        time.sleep(self.config.WAIT_REFRESH_COOLDOWN); return True
+                        time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
+                        return True
         return False
 
     @staticmethod
     def match_rooms(autos, rules, config):
         valid = []
         for a in BBSBot.dedupe_autos(autos, config):
-            _, ay = a.left + a.width // 2, a.top + a.height // 2
-            # V9 Improved Logic: Rule text must be on the same horizontal level (+/- 45px)
+            ax, ay = a.left + a.width // 2, a.top + a.height // 2
+            # V9.51: Relaxed vertical alignment (45 -> 55) to catch OSIRIS-style badges.
             best_r, min_dy = None, float("inf")
             for r in rules:
                 ry = r.top + r.height // 2
                 dy = abs(ry - ay)
-                if dy < 45 and dy < min_dy:
+                if dy < 55 and dy < min_dy:
                     min_dy, best_r = dy, r
             if best_r: valid.append((a, best_r))
         return valid
