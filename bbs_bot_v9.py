@@ -65,7 +65,6 @@ class BotConfiguration:
 
     # Wait Constants
     WAIT_DISCONNECT_COOLING: Tuple[int, int] = (8, 16)
-    WAIT_RESTART: float = 5.0
     CONF_NORMAL: float = 0.80
     CONF_HIGH: float = 0.90
     CONF_READY: float = 0.95
