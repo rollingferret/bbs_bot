@@ -607,13 +607,24 @@ class BBSBot:
         return False
 
     def handle_distraction(self, haystack=None):
-        logger.info("DISTRACTION: Sleeping..."); time.sleep(random.randint(*self.config.DISTRACTION_DURATION))
-        self.quest_watchdog = time.time()
+        duration = random.randint(*self.config.DISTRACTION_DURATION)
+        logger.info(f"DISTRACTION: Taking a coffee break ({duration}s)...")
+        time.sleep(duration)
+        
+        # V9.53: Surgical Watchdog Reset. 
+        # We must zero out all timers because the 2-8 min sleep would otherwise
+        # leave us with very little 'budget' before a hard restart (10m).
+        self.reset_quest_watchdog("post-break") 
+        self.search_start_time = time.time()
+        self.last_state_change_time = time.time()
+        
         self.fatigue_start_time = time.time()
         self.active_profile = "SHIKAI_MAX"
         self.config._apply_profile(self.active_profile)
         if self.config.CIRCADIAN_PROFILES:
             self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
+        
+        # V9.53: Transition to RECOVERY to allow the bot to find its way back to the quest list.
         self.transition_to("RECOVERY")
         return True
 
@@ -711,13 +722,21 @@ class BBSBot:
             old = self.active_profile
             self.active_profile = "SHIKAI_NORMAL" if old == "SHIKAI_MAX" else "SHIKAI_MAX"
             self.config._apply_profile(self.active_profile)
+            
             if self.config.CIRCADIAN_PROFILES:
                 duration = random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
                 self.next_profile_swap = time.time() + duration
                 logger.info(f"CIRCADIAN SHIFT: {self.active_profile} for {duration/60:.0f}m")
+            
+            # V9.52: Targeted Fatigue Flow
+            # When we shift from MAX to NORMAL, we schedule a break to occur after a few "tired" runs.
             if old == "SHIKAI_MAX" and self.active_profile == "SHIKAI_NORMAL":
                 self.next_distraction_run = self.run_count + random.randint(*self.config.CASUAL_LINGER_RUNS)
-                logger.info(f"FATIGUE: Break after run #{self.next_distraction_run}.")
+                logger.info(f"FATIGUE: Shift to NORMAL. Break scheduled after run #{self.next_distraction_run}.")
+            
+            # If we were in NORMAL and it's time to swap, but we haven't hit the break yet,
+            # we force the swap back to MAX only AFTER the distraction handler does it.
+            # This ensures we don't 'skip' the break if the NORMAL timer is too long.
 
     def check_session_limit(self):
         if (time.time() - self.start_time) / 3600 >= self.config.SESSION_MAX_HOURS: sys.exit(0)
