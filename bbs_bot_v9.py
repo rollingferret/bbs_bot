@@ -518,7 +518,7 @@ class BBSBot:
     def match_rooms(autos, rules, config):
         valid = []
         for a in BBSBot.dedupe_autos(autos, config):
-            ax, ay = a.left + a.width // 2, a.top + a.height // 2
+            ay = a.top + a.height // 2
             # V9.51: Relaxed vertical alignment (45 -> 55) to catch OSIRIS-style badges.
             best_r, min_dy = None, float("inf")
             for r in rules:
