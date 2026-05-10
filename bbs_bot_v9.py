@@ -87,9 +87,9 @@ class BotConfiguration:
 
     # Operational Safety
     MAX_CONSECUTIVE_RECOVERIES: int = 3
-    SESSION_MAX_HOURS: int = 16
+    SESSION_MAX_HOURS: float = 16
     POLL_MAIN_LOOP: float = 0.1
-    POLL_UI_VERIFY: float = 0.05
+    POLL_UI_VERIFY: float = 0.1
     POLL_POPUP: float = 0.5
     POLL_PROPERTY_SYNC: float = 5.0
     POLL_RUNNING: float = 0.5
