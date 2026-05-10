@@ -41,3 +41,22 @@
 ### 6. Fast Exits & Session Summaries
 *   **Discovery**: A nested `except KeyboardInterrupt` inside the main loop was fighting the outer try/except block, causing a 1-2 second delay when hitting `Ctrl+C` and double-printing the summary.
 *   **V9 Fix**: Stripped the inner trap. Exits are now instant and trigger a beautifully formatted CLI summary showing Uptime, Runs, Avg Time, and Disconnects.
+
+### 7. Phantom Popup Hallucinations
+*   **Discovery**: Combat flashes and red notification badges on icons were hitting a ~0.85 match for "Close" popups, causing the bot to abandon quests mid-fight.
+*   **V9 Fix**: 
+    1.  Increased `close_news` and generic `close` confidence to **0.92+**.
+    2.  Implemented the **3-Frame Temporal Rule**: The bot must detect critical icons (Auto-button, Rewards) for 3 consecutive frames before acting.
+    3.  Added a surgical `can_click` whitelist to physically block News clicks during the combat phase.
+
+### 8. The "Recovery Yelling" Tracebacks
+*   **Discovery**: `subprocess.check_output` throws a noisy `CalledProcessError` every time the game window is missing (e.g., during a relaunch).
+*   **V9 Fix**: Restored the V6 **Quiet Search** architecture. Replaced `check_output` with `subprocess.run` and a dedicated `ensure_window_ready` helper that fails silently.
+
+### 9. Double-Click Animation Conflict
+*   **Discovery**: The bot was so fast it would click "Join Room" twice before the animation could clear, sometimes breaking the lobby flow.
+*   **V9 Fix**: Added **Disappearance Verification** to the `smart_click` core. The bot now confirms a button has physically vanished before it is allowed to continue its state transition.
+
+### 10. Unstacked Recovery Hierarchy
+*   **Discovery**: Multiple watchdogs set to the same 300s timer caused race conditions during recovery.
+*   **V9 Fix**: Implemented a **Triage Escalation** (3m AFK / 5m Stuck / 10m Global). The 10m Watchdog now resets every time the bot finds a room or enters combat, acting as a true "Dead Man's Switch."

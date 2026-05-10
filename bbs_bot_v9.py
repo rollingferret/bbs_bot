@@ -38,6 +38,7 @@ class BotConfiguration:
     DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
     DELAY_SNIPE: float = 0.20
     DELAY_POPUP: float = 1.5
+    DELAY_NEWS: float = 0.4
     DELAY_READY: float = 0.90
     WAIT_ROOM_LOAD: float = 1.0
     WAIT_SEARCH_AGAIN: float = 1.5
@@ -51,11 +52,11 @@ class BotConfiguration:
 
     # Timeouts
     TIMEOUT_STUCK: float = 300
-    TIMEOUT_QUEST_MAX: float = 300
+    TIMEOUT_QUEST_MAX: float = 600
     TIMEOUT_GAME_START: float = 120
     TIMEOUT_READY: float = 30
-    TIMEOUT_RUN_START: float = 300
-    TIMEOUT_TAP_VERIFY: float = 15
+    TIMEOUT_RUN_START: float = 180
+    TIMEOUT_TAP_VERIFY: float = 25.0
     TIMEOUT_LOBBY_EXPAND: float = 20.0
     TIMEOUT_LOBBY_JOIN: float = 10.0
     TIMEOUT_ROOM_LIST_LOAD: float = 5.0
@@ -250,7 +251,7 @@ class BBSBot:
             "ready": 0.95, "disconnect_retry": 0.90, "unavailable_close": 0.95, 
             "close_news": 0.92, "close": 0.92,
             "ingame_auto_on": 0.95, "ingame_auto_off": 0.95,
-            "tap1": 0.95, "tap2": 0.95, "retry": 0.95
+            "tap1": 0.90, "tap2": 0.90, "retry": 0.90
         }
         return c.get(key, self.config.CONF_NORMAL)
 
@@ -396,6 +397,7 @@ class BBSBot:
 
             if self.find_image(key, confidence=conf, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
+                if key == "close_news": time.sleep(self.config.DELAY_NEWS)
                 if key == "disconnect_retry": self.disconnect_retry_count += 1
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
@@ -512,12 +514,13 @@ class BBSBot:
         return False
 
     def handle_check_run_start(self, haystack=None):
-        if self.find_image("ingame_auto_on", haystack=haystack) or self.find_image("ingame_auto_off", haystack=haystack): self.transition_to("RUNNING"); return True
+        if self.find_stable_image("ingame_auto_on", frames=3) or self.find_stable_image("ingame_auto_off", frames=3): 
+            self.transition_to("RUNNING"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest(haystack=haystack); return True
         return False
 
     def handle_running(self, haystack=None):
-        if self.find_image("tap1", haystack=haystack): self.transition_to("FINISH"); return True
+        if self.find_stable_image("tap1", frames=3): self.transition_to("FINISH"); return True
         time.sleep(self.config.POLL_RUNNING); return False
 
     def handle_finish(self, haystack=None):
@@ -542,7 +545,7 @@ class BBSBot:
         return False
 
     def handle_game_startup(self, haystack=None):
-        for key in ["game_start", "close_news", "coop_1", "coop_2"]:
+        for key in ["game_start", "coop_1", "coop_2"]:
             if self.find_image(key, haystack=haystack): return self.smart_click(key, f"startup {key}", verify_key=key, haystack=haystack)
         if self.find_image("coop_quest", haystack=haystack) or self.find_image("open_coop_quest", haystack=haystack): self.transition_to("MENU"); return True
         return False
@@ -732,3 +735,4 @@ if __name__ == "__main__":
     try: bot.run(test_restart=args.test_restart)
     except KeyboardInterrupt: bot.log_session_summary(); sys.exit(0)
     except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
+(1)

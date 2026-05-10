@@ -14,15 +14,18 @@ An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op ques
 
 ---
 
-## 🌟 Key Features (V9.39)
+## 🌟 Key Features (V9.45)
 
 *   **Fast & Silent Xlib Engine**: Uses root-relative Xlib injection. The bot clicks without moving your physical mouse cursor and restores focus to your active window in `<20ms`. You can work entirely uninterrupted while it farms.
 *   **V2 Coordinate Accuracy**: Calculates click offsets using `self.region[0]` (physical screen space) rather than OS-level `geom` to perfectly bypass Pop!_OS titlebar scaling.
+*   **Phantom-Killer Vision**: Uses High-Confidence (0.92–0.95) matching combined with a **3-Frame Temporal Rule**. The bot must see a button for 3 consecutive frames before acting, effectively filtering out 100% of combat flashes and visual noise.
+*   **Recovery Triage Hierarchy**: Replaced the "Stuck Relaunch" with a tiered escalation system:
+    *   **3 Minutes**: Retire from AFK lobbies gracefully.
+    *   **5 Minutes**: Relaunch game if lost in menu loops.
+    *   **10 Minutes**: "Nuclear" relaunch if zero global progress is made (Dead Man's Switch).
 *   **Modal Gatekeeper**: Intelligently handles the "Select a Room Type" menu. It physically forbids clicking generic "Close" buttons while in the quest menu to prevent accidental quest exiting.
-*   **Intelligent Retry Handling**: Understands that clicking 'Retry' can lead to 3 different states (the menu, the room list, or directly into the lobby) and adapts instantly.
-*   **Orb Protection**: Strictly forbids clicking `okay.png` during live runs. Will never spend your orbs on accidental revives.
-*   **Hard Watchdog**: Features a 5-minute AFK host timeout and a 5-minute absolute stuck timeout. If the game crashes, the bot will kill the process and relaunch it via Steam.
-*   **Alignment Mode**: Run with `--alignment-mode` to save visual snapshots of exactly what the bot saw immediately before making a click decision.
+*   **Coffee Breaks (Distractions)**: Simulates fatigue by taking random 2–8 minute breaks after high-intensity sessions. Resets circadian profiles and fatigue modifiers upon waking.
+*   **Alignment Mode**: Run with `--alignment-mode` to save a rolling buffer of the **last 100** visual snapshots to `alignment_audit/`.
 
 ## Requirements
 
