@@ -63,7 +63,9 @@ class BotConfiguration:
     TIMEOUT_SCAN_IDLE: float = 20.0
     TIMEOUT_VERIFY_UI: float = 2.0
 
-    # Vision
+    # Wait Constants
+    WAIT_DISCONNECT_COOLING: Tuple[int, int] = (8, 16)
+    WAIT_RESTART: float = 5.0
     CONF_NORMAL: float = 0.80
     CONF_HIGH: float = 0.90
     CONF_READY: float = 0.95
@@ -398,7 +400,12 @@ class BBSBot:
             if self.find_image(key, confidence=conf, haystack=haystack):
                 logger.warning(f"GLOBAL: Popup '{key}' confirmed")
                 if key == "close_news": time.sleep(self.config.DELAY_NEWS)
-                if key == "disconnect_retry": self.disconnect_retry_count += 1
+                if key == "disconnect_retry":
+                    self.disconnect_retry_count += 1
+                    cool_time = random.randint(*self.config.WAIT_DISCONNECT_COOLING)
+                    logger.warning(f"DISCONNECT: Cooling down for {cool_time}s...")
+                    time.sleep(cool_time)
+
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
                 
