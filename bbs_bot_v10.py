@@ -106,7 +106,6 @@ class BotConfiguration:
     POLL_MAIN_LOOP: float = 0.1
     POLL_UI_VERIFY: float = 0.1
     POLL_POPUP: float = 0.5
-    POLL_PROPERTY_SYNC: float = 5.0
     POLL_RUNNING: float = 0.5
 
     CASUAL_LINGER_RUNS: Tuple[int, int] = (8, 16)
@@ -215,10 +214,11 @@ class BBSBot:
         self._last_join_row = None
         self.fatigue_modifier, self._last_popup_check = 1.0, 0.0
         self._last_id_search = 0.0
-        self._props_applied_to = None
         self._last_non_game_focus = None
         self._last_non_game_focus_at = 0.0
         self._loop_restore_focus = None
+        self._loop_restore_focus_at = 0.0
+        self._game_visibility_dirty = True
         self._run_counted = False
         self.disconnect_retry_count = 0
         self.handlers = {
@@ -468,13 +468,23 @@ class BBSBot:
             if trace_ready:
                 logger.info(f"READY TRACE: pre_click_screenshot={time.perf_counter() - screenshot_start:.3f}s")
         focus_start = time.perf_counter()
-        cur_focus, restore_focus = self.restore_focus_for_click()
+        cur_focus, restore_focus, restore_source, focus_detail = self.restore_focus_for_click()
         if trace_ready:
             logger.info(f"READY TRACE: focus_lookup={time.perf_counter() - focus_start:.3f}s")
         if self.config.ALIGNMENT_MODE:
             logger.info(
                 f"FOCUS: before click '{description}' active={self.window_label(cur_focus)} "
-                f"game={self.window_label(self.win_id)} restore={self.window_label(restore_focus)}"
+                f"game={self.window_label(self.win_id)} restore={self.window_label(restore_focus)} "
+                f"source={restore_source}"
+            )
+            logger.info(
+                f"FOCUS TRACE: '{description}' "
+                f"preclick={self.window_label(focus_detail['preclick'])} valid={focus_detail['preclick_valid']} "
+                f"loop={self.window_label(focus_detail['loop'])} valid={focus_detail['loop_valid']} age={focus_detail['loop_age']:.2f}s "
+                f"fallback={self.window_label(focus_detail['fallback'])} valid={focus_detail['fallback_valid']} age={focus_detail['fallback_age']:.2f}s "
+                f"preclick_eq_loop={focus_detail['preclick_eq_loop']} "
+                f"preclick_eq_fallback={focus_detail['preclick_eq_fallback']} "
+                f"selected={self.window_label(restore_focus)} source={restore_source}"
             )
         click_start = time.perf_counter()
         success = self._send_x11_click(click_x, click_y)
@@ -519,28 +529,47 @@ class BBSBot:
                 except Exception:
                     active = None
                 logger.info(f"FOCUS: restored active={self.window_label(active)} target={self.window_label(cur_focus)}")
+            self._game_visibility_dirty = True
         except Exception:
             return
 
     def capture_loop_focus(self):
         self._loop_restore_focus = None
+        self._loop_restore_focus_at = 0.0
         focus = self.current_active_window()
         if self.is_valid_restore_window(focus):
             self.remember_user_focus(focus)
             self._loop_restore_focus = focus
+            self._loop_restore_focus_at = time.time()
         elif self.config.ALIGNMENT_MODE:
             logger.info(f"FOCUS: loop sample ignored active={self.window_label(focus)} game={self.window_label(self.win_id)}")
 
     def restore_focus_for_click(self):
         cur_focus = self.current_active_window()
-        if self.is_valid_restore_window(cur_focus):
+        now = time.time()
+        cur_valid = self.is_valid_restore_window(cur_focus)
+        loop_valid = self.is_valid_restore_window(self._loop_restore_focus)
+        fallback_valid = self.recent_user_focus_is_valid()
+        detail = {
+            "preclick": cur_focus,
+            "preclick_valid": cur_valid,
+            "loop": self._loop_restore_focus,
+            "loop_valid": loop_valid,
+            "loop_age": now - self._loop_restore_focus_at if self._loop_restore_focus_at else float("inf"),
+            "fallback": self._last_non_game_focus,
+            "fallback_valid": fallback_valid,
+            "fallback_age": now - self._last_non_game_focus_at if self._last_non_game_focus_at else float("inf"),
+            "preclick_eq_loop": cur_focus == self._loop_restore_focus,
+            "preclick_eq_fallback": cur_focus == self._last_non_game_focus,
+        }
+        if cur_valid:
             self.remember_user_focus(cur_focus)
-            return cur_focus, cur_focus
-        if self.is_valid_restore_window(self._loop_restore_focus):
-            return cur_focus, self._loop_restore_focus
-        if self.recent_user_focus_is_valid():
-            return cur_focus, self._last_non_game_focus
-        return cur_focus, None
+            return cur_focus, cur_focus, "current_preclick", detail
+        if loop_valid:
+            return cur_focus, self._loop_restore_focus, "loop_sample", detail
+        if fallback_valid:
+            return cur_focus, self._last_non_game_focus, "recent_fallback", detail
+        return cur_focus, None, "none", detail
 
     def remember_user_focus(self, window_id):
         self._last_non_game_focus = window_id
@@ -764,6 +793,31 @@ class BBSBot:
         logger.info(f"SCAN: Candidate row {row} failed pre-click rule recheck; skipping.")
         return False
 
+    def sort_room_candidates(self, candidates):
+        room_order = -1 if self.config.PREFER_BOTTOM_ROOMS else 1
+        return sorted(candidates, key=lambda c: (0 if c[2] == "strict" else 1, room_order * c[0].top))
+
+    def click_room_candidate(self, auto, rule, mode, haystack=None):
+        row_y = auto.top + auto.height // 2
+        label = "Auto + Rules" if mode == "strict" else "Auto Only"
+        if mode == "strict" and rule:
+            px, py = (auto.left + rule.left + rule.width) // 2, row_y
+        else:
+            px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, row_y
+
+        target = pyscreeze.Box(
+            px - self.config.SNATCH_BOX_OFFSET[0],
+            py - self.config.SNATCH_BOX_OFFSET[1],
+            self.config.SNATCH_BOX_DIM[0],
+            self.config.SNATCH_BOX_DIM[1],
+        )
+
+        if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack):
+            self._last_join_row = row_y
+            self.transition_to("JOIN_PENDING")
+            return True
+        return False
+
     def clicked_row_has_room_not_met(self, haystack=None):
         if self._last_join_row is None:
             return False
@@ -850,7 +904,9 @@ class BBSBot:
 
                 # Realign with visible state instead of trusting stale state.
                 if key == "close":
-                    if self.has_room_fail_context(haystack):
+                    if self.state == "RUNNING":
+                        self.transition_to("RECOVERY")
+                    elif self.has_room_fail_context(haystack):
                         self.route_room_fail(key)
                     else:
                         self.transition_to("RECOVERY")
@@ -917,8 +973,9 @@ class BBSBot:
         
         # Stability Pause: Wait for room list to settle
         time.sleep(0.4)
+        scan_haystack = self.capture_snapshot() or haystack
         
-        autos, signature, candidates = self.build_room_candidates(haystack)
+        autos, signature, candidates = self.build_room_candidates(scan_haystack)
         if autos:
             self.note_room_list_signature(signature)
             
@@ -931,8 +988,7 @@ class BBSBot:
             # If we found candidates, try to snatch them immediately.
             # If a snatch click fails to trigger a transition, force a list refresh.
             if candidates and not self._force_refresh:
-                if self.config.PREFER_BOTTOM_ROOMS:
-                    candidates.sort(key=lambda c: c[0].top, reverse=True)
+                candidates = self.sort_room_candidates(candidates)
                 self.search_start_time = time.time() # Reset idle timer on discovery
                 skipped = 0
                 for auto, rule, mode in candidates:
@@ -940,17 +996,7 @@ class BBSBot:
                     if not self.candidate_still_valid_before_click(row_y, mode):
                         skipped += 1
                         continue
-                    label = "Auto + Rules" if mode == "strict" else "Auto Only"
-                    if mode == "strict" and rule: 
-                        px, py = (auto.left + rule.left + rule.width) // 2, auto.top + auto.height // 2
-                    else: 
-                        px, py = auto.left + self.config.ALLOW_ALL_AUTO_OFFSET_X, auto.top + auto.height // 2
-                    
-                    target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
-                    
-                    if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack):
-                        self._last_join_row = row_y
-                        self.transition_to("JOIN_PENDING")
+                    if self.click_room_candidate(auto, rule, mode, haystack=scan_haystack):
                         return True
                 if skipped:
                     logger.info(f"SCAN: Skipped {skipped} invalid room row(s); refreshing list.")
@@ -958,9 +1004,9 @@ class BBSBot:
                 return True
         
         # If no valid rooms are available, refresh the list.
-        if self._force_refresh or self.find_image("search_again", haystack=haystack):
+        if self._force_refresh or self.find_image("search_again", haystack=scan_haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
-                if self.click_search_again(haystack=haystack):
+                if self.click_search_again(haystack=scan_haystack):
                     return True
         return False
 
@@ -1122,6 +1168,7 @@ class BBSBot:
     def transition_to(self, state):
         if self.state != state:
             logger.info(f"TRANSITION: {self.state} -> {state}"); old = self.state; self.state = state; self.last_state_change_time = time.time()
+            self._game_visibility_dirty = True
             if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"to_{state}")
             if state == "RECOVERY": self.save_error_snapshot(f"recovery_from_{old}")
             if state in ["RUNNING", "READY"]: self.reset_quest_watchdog(state.lower())
@@ -1216,13 +1263,25 @@ class BBSBot:
     def setup_window_properties(self):
         if not self.win_id:
             return
-        if self._props_applied_to != self.win_id:
-            subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
-            self._props_applied_to = self.win_id
+        subprocess.run(["wmctrl", "-i", "-r", self.win_id, "-b", "add,sticky,above"], check=False, stderr=subprocess.DEVNULL)
         try:
             state = subprocess.check_output(["xprop", "-id", self.win_id, "WM_STATE"], text=True, stderr=subprocess.DEVNULL).lower()
             if "iconic" in state: subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
         except Exception: pass
+
+    def ensure_game_visible_for_vision(self):
+        if not self.win_id or not self._game_visibility_dirty:
+            return
+        active_before = self.current_active_window() if self.config.ALIGNMENT_MODE else None
+        self.setup_window_properties()
+        subprocess.run(["xdotool", "windowraise", self.win_id], check=False, stderr=subprocess.DEVNULL)
+        if self.config.ALIGNMENT_MODE:
+            active_after = self.current_active_window()
+            logger.info(
+                f"FOCUS TRACE: vision visibility active_before={self.window_label(active_before)} "
+                f"active_after={self.window_label(active_after)} game={self.window_label(self.win_id)}"
+            )
+        self._game_visibility_dirty = False
 
     def check_circadian_rhythm(self):
         if time.time() > self.next_profile_swap:
@@ -1247,7 +1306,6 @@ class BBSBot:
     def run(self, restart_game_on_start=False):
         if restart_game_on_start: self.recover_game("startup_restart", capture_evidence=False)
         self.reset_quest_watchdog("startup")
-        last_prop_sync = 0.0
         while True:
             try:
                 if not self.ensure_window_ready():
@@ -1257,8 +1315,7 @@ class BBSBot:
 
                 self.capture_loop_focus()
 
-                if time.time() - last_prop_sync > self.config.POLL_PROPERTY_SYNC:
-                    self.setup_window_properties(); last_prop_sync = time.time()
+                self.ensure_game_visible_for_vision()
                 
                 monitor = {"top": self.region[1], "left": self.region[0], "width": self.region[2], "height": self.region[3]}
                 sct_img = self.sct.grab(monitor); self.snapshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
