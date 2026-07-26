@@ -652,7 +652,7 @@ class BBSBot:
         self.mark_last_room_failed(key)
         self.search_start_time = time.time()
         self._force_refresh = True
-        self._next_refresh_time = max(self._next_refresh_time, time.time() + self.config.ROOM_FAIL_REFRESH_DELAY)
+        self._next_refresh_time = time.time() + self.config.ROOM_FAIL_REFRESH_DELAY
         if self.state in {"GAME_STARTUP", "RECOVERY"}:
             self.transition_to("RECOVERY")
         else:
