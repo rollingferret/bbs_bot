@@ -824,6 +824,11 @@ class BBSBot:
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: 
             logger.warning("SCAN_ROOMS: Idle timeout reached. Recovering...")
             self.transition_to("RECOVERY"); return True
+
+        if self._force_refresh:
+            if self.click_search_again(haystack=haystack):
+                return True
+            return False
         
         # Stability Pause: Wait for room list to settle
         time.sleep(0.4)
