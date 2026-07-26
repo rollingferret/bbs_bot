@@ -43,25 +43,20 @@ def add_alignment_log_handler():
 
 @dataclass
 class BotConfiguration:
-    """Centralized configuration for the BBS Bot V9.0 'Sentinel'."""
+    """Centralized configuration for the BBS Bot V10 Sentinel."""
 
     RAW_TITLE: str = "Bleach: Brave Souls"
     CIRCADIAN_PROFILES: Optional[Dict[str, Dict[str, Any]]] = None
 
     # Timing Profiles
     DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
-    DELAY_SNIPE: float = 0.20
-    DELAY_POPUP: float = 1.5
     DELAY_NEWS: float = 0.4
     DELAY_READY: float = 0.90
-    WAIT_ROOM_LOAD: float = 1.0
     WAIT_SEARCH_AGAIN: float = 1.8
-    WAIT_LOBBY_READY: float = 0.3
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 2.0
     ROOM_FAIL_REFRESH_DELAY: float = 0.9
     WAIT_DOWNLOAD_AFTER_CONFIRM: float = 45.0
-    DELAY_POST_POPUP: float = 0.3
     WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
     WAIT_RESTART: float = 5.0
@@ -70,7 +65,6 @@ class BotConfiguration:
     TIMEOUT_STUCK: float = 300
     TIMEOUT_QUEST_MAX: float = 600
     TIMEOUT_GAME_START: float = 120
-    TIMEOUT_READY: float = 30
     TIMEOUT_RUN_START: float = 180
     TIMEOUT_TAP_VERIFY: float = 25.0
     TIMEOUT_LOBBY_EXPAND: float = 20.0
@@ -84,9 +78,7 @@ class BotConfiguration:
 
     # Vision
     CONF_NORMAL: float = 0.80
-    CONF_HIGH: float = 0.90
     CONF_READY: float = 0.95
-    CONF_STARTUP: float = 0.85
     CONF_LOOSE: float = 0.68
     CONF_POPUP: float = 0.85
     CONF_VERIFY_ACTION: float = 0.80
@@ -130,9 +122,7 @@ class BotConfiguration:
     MAX_ALIGNMENT_SNAPSHOTS: int = 100
 
     # Flags
-    TAKE_DEBUG_SCREENSHOTS: bool = False
     ALIGNMENT_MODE: bool = False
-    MANAGE_INGAME_AUTO: bool = True
     RESTORE_FOCUS_AFTER_CLICK: bool = True
     START_PROFILE: str = "SHIKAI_MAX"
 
@@ -141,16 +131,14 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_SNIPE": 0.20, "DELAY_POPUP": 1.5,
-                "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 1.0, "WAIT_SEARCH_AGAIN": 1.8,
-                "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
+                "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_READY": 0.90, "WAIT_SEARCH_AGAIN": 1.8,
+                "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 2.0, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8, "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
-                "DELAY_COGNITIVE": (0.95, 0.10), "DELAY_SNIPE": 0.40, "DELAY_POPUP": 2.0,
-                "DELAY_READY": 1.10, "WAIT_ROOM_LOAD": 1.2, "WAIT_SEARCH_AGAIN": 3.0,
-                "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0, "WAIT_REFOCUS": 0.05,
+                "DELAY_COGNITIVE": (0.95, 0.10), "DELAY_READY": 1.10, "WAIT_SEARCH_AGAIN": 3.0,
+                "WAIT_POST_RETRY": 2.0, "WAIT_REFOCUS": 0.05,
                 "WAIT_REFRESH_COOLDOWN": 2.5, "WAIT_STABILIZE_ANIMATION": 1.2,
                 "TIMEOUT_VERIFY_UI": 1.4, "DURATION_MINS": (60, 180),
             },
@@ -178,12 +166,8 @@ class BotConfiguration:
         if self.CIRCADIAN_PROFILES:
             s = self.CIRCADIAN_PROFILES[profile_name]
             self.DELAY_COGNITIVE = s["DELAY_COGNITIVE"]
-            self.DELAY_SNIPE = s["DELAY_SNIPE"]
-            self.DELAY_POPUP = s["DELAY_POPUP"]
             self.DELAY_READY = s["DELAY_READY"]
-            self.WAIT_ROOM_LOAD = s["WAIT_ROOM_LOAD"]
             self.WAIT_SEARCH_AGAIN = s["WAIT_SEARCH_AGAIN"]
-            self.WAIT_LOBBY_READY = s["WAIT_LOBBY_READY"]
             self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
             self.WAIT_REFOCUS = s.get("WAIT_REFOCUS", 0.02)
             self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
@@ -200,7 +184,7 @@ def human_delay(profile, fatigue=1.0, safety_factor=0.05):
 class GameWindowNotFoundError(Exception): pass
 
 class BBSBot:
-    """BBS Sentinel V9.37 - V6 Speed + V2 Accuracy."""
+    """BBS Sentinel V10 runtime state machine."""
     RECOVERY_MAP = [
         ("READY", "ready"), ("RUNNING", "ingame_auto_on"), ("RUNNING", "ingame_auto_off"),
         ("CHECK_RUN_START", "retire"), ("FINISH", "tap1"), ("FINISH", "tap2"), ("FINISH", "retry"),
@@ -222,12 +206,11 @@ class BBSBot:
         self.consecutive_recovery_count = self.search_start_time = 0
         self._force_refresh = False
         self._next_refresh_time = 0.0
-        self._refresh_burst_count = 0
         self._last_room_signature = None
         self._failed_room_rows: Dict[int, float] = {}
         self._last_join_row = None
         self.fatigue_modifier, self._last_popup_check = 1.0, 0.0
-        self._last_property_sync = self._last_id_search = 0.0
+        self._last_id_search = 0.0
         self._props_applied_to = None
         self._last_non_game_focus = None
         self._run_counted = False
@@ -606,7 +589,6 @@ class BBSBot:
             if self._last_room_signature is not None:
                 logger.info("SCAN: Room list changed; clearing temporary row cooldowns.")
             self._failed_room_rows.clear()
-            self._refresh_burst_count = 0
             self._last_room_signature = signature
 
     def room_row_bucket(self, y):
@@ -641,7 +623,6 @@ class BBSBot:
         if self.smart_click("search_again", reason, haystack=haystack):
             self.search_start_time = time.time()
             self._force_refresh = False
-            self._refresh_burst_count += 1
             self._next_refresh_time = time.time() + self.refresh_delay()
             self.clear_room_fail_tracking("search again")
             time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
@@ -700,12 +681,11 @@ class BBSBot:
         return False
 
     def clear_room_fail_tracking(self, reason):
-        if self._failed_room_rows or self._last_room_signature is not None or self._refresh_burst_count:
+        if self._failed_room_rows or self._last_room_signature is not None:
             logger.info(f"SCAN: Clearing room failure tracking ({reason}).")
         self._failed_room_rows.clear()
         self._last_room_signature = None
         self._last_join_row = None
-        self._refresh_burst_count = 0
         self._next_refresh_time = 0.0
 
     def handle_global_popups(self, haystack=None):
@@ -713,7 +693,7 @@ class BBSBot:
         if now - self._last_popup_check < self.config.POLL_POPUP: return False
         self._last_popup_check = now
         
-        # V9.34 Surgical Block: Only block the generic modal 'close' button.
+        # Only block the generic modal 'close' button.
         # We MUST allow 'unavailable_close' and others even in ENTER_ROOM_LIST 
         # because those are real errors.
         blocked = ["close"] if self.state in ["ENTER_ROOM_LIST"] else []
@@ -763,7 +743,7 @@ class BBSBot:
                 if not self.smart_click(key, f"dismiss {key}", verify_key=key, haystack=haystack):
                     return False
 
-                # V9.48: Realignment with V6 State Truth
+                # Realign with visible state instead of trusting stale state.
                 if key == "close":
                     if self.has_room_fail_context(haystack):
                         self.route_room_fail(key)
@@ -799,7 +779,7 @@ class BBSBot:
     def handle_enter_room_list(self, haystack=None):
         # Case A: We are on the 'Select a Room Type' menu
         if self.find_image("enter_room_button", haystack=haystack):
-            # V9.36: Stay in ENTER_ROOM_LIST after click so 'close' button is blocked
+            # Stay in ENTER_ROOM_LIST after click so the generic 'close' button remains blocked.
             # Fix: Wait for button disappearance to prevent double-clicks
             if self.smart_click("enter_room_button", "enter room list", verify_key="enter_room_button", wait_for_appearance=False, haystack=haystack): 
                 return True
@@ -820,7 +800,7 @@ class BBSBot:
     def handle_scan_rooms(self, haystack=None):
         if self.find_image("ready", confidence=self.config.CONF_READY, haystack=haystack): self.transition_to("READY"); return True
         
-        # V9.60: Increased idle timeout slightly to allow more scan cycles before recovery
+        # Allow several scan cycles before escalating to recovery.
         if time.time() - self.search_start_time > self.config.TIMEOUT_SCAN_IDLE: 
             logger.warning("SCAN_ROOMS: Idle timeout reached. Recovering...")
             self.transition_to("RECOVERY"); return True
@@ -853,8 +833,8 @@ class BBSBot:
             if candidates:
                 logger.info(f"SCAN: Found {len(candidates)} rooms (Strict: {strict_count}, Fallback: {fallback_count})")
 
-            # V9.60 Logic: If we found candidates, try to snatch them immediately.
-            # If a snatch click fails to trigger a transition, we don't just sit here.
+            # If we found candidates, try to snatch them immediately.
+            # If a snatch click fails to trigger a transition, force a list refresh.
             if candidates and not self._force_refresh:
                 if self.config.PREFER_BOTTOM_ROOMS:
                     candidates.sort(key=lambda c: c[0].top, reverse=True)
@@ -876,7 +856,6 @@ class BBSBot:
                     
                     target = pyscreeze.Box(px - self.config.SNATCH_BOX_OFFSET[0], py - self.config.SNATCH_BOX_OFFSET[1], self.config.SNATCH_BOX_DIM[0], self.config.SNATCH_BOX_DIM[1])
                     
-                    # V9.60: Transition to JOIN_PENDING if click is successful.
                     if self.smart_click(target, f"snatch {mode} ({label})", haystack=haystack):
                         self._last_join_row = row_y
                         self.transition_to("JOIN_PENDING")
@@ -886,7 +865,7 @@ class BBSBot:
                     self._force_refresh = True
                 return True
         
-        # V9.60: Improved Refresh Logic. If no autos or force refresh, click Search Again.
+        # If no valid rooms are available, refresh the list.
         if self._force_refresh or self.find_image("search_again", haystack=haystack):
             if time.time() - self.search_start_time > self.config.WAIT_SEARCH_AGAIN or self._force_refresh:
                 if self.click_search_again(haystack=haystack):
@@ -1014,7 +993,7 @@ class BBSBot:
         logger.info(f"DISTRACTION: Taking a coffee break ({duration}s)...")
         time.sleep(duration)
         
-        # V9.60: Surgical Watchdog Reset. 
+        # Reset the quest watchdog when an intentional break ends.
         # We must zero out all timers because the 2-8 min sleep would otherwise
         # leave us with very little 'budget' before a hard restart (10m).
         self.reset_quest_watchdog("post-break") 
@@ -1027,7 +1006,7 @@ class BBSBot:
         if self.config.CIRCADIAN_PROFILES:
             self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
         
-        # V9.60: Transition to RECOVERY to allow the bot to find its way back to the quest list.
+        # Let recovery find the current visible UI after the restart.
         self.transition_to("RECOVERY")
         return True
 

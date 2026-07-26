@@ -1,6 +1,6 @@
 # Bleach: Brave Souls Auto Co-op Bot (BBS Sentinel)
 
-An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming on Linux/X11. This project has evolved through 9 generations to achieve a balance between human-like behavior, blistering speed, and bulletproof reliability.
+An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op quest farming on Linux/X11. This project has evolved through 10 generations to balance human-like behavior, speed, and recovery reliability.
 
 ## ⚠️ DISCLAIMER - USE AT YOUR OWN RISK
 
@@ -14,9 +14,9 @@ An advanced, stealth-focused autonomous agent for Bleach: Brave Souls co-op ques
 
 ---
 
-## 🌟 Key Features (V9.45)
+## 🌟 Key Features (V10)
 
-*   **Fast & Silent Xlib Engine**: Uses root-relative Xlib injection. The bot clicks without moving your physical mouse cursor and restores focus to your active window in `<20ms`. You can work entirely uninterrupted while it farms.
+*   **X11 Click + Refocus Engine**: Uses root-relative Xlib click injection and xdotool focus restoration. The bot clicks the game window without moving your physical mouse cursor, then restores the previously active window.
 *   **V2 Coordinate Accuracy**: Calculates click offsets using `self.region[0]` (physical screen space) rather than OS-level `geom` to perfectly bypass Pop!_OS titlebar scaling.
 *   **Phantom-Killer Vision**: Uses High-Confidence (0.92–0.95) matching combined with a **3-Frame Temporal Rule**. The bot must see a button for 3 consecutive frames before acting, effectively filtering out 100% of combat flashes and visual noise.
 *   **Recovery Triage Hierarchy**: Replaced the "Stuck Relaunch" with a tiered escalation system:
@@ -50,21 +50,21 @@ pip install -r requirements.txt
 
 **Run the Sentinel (Normal Mode):**
 ```bash
-python3 bbs_bot_v9.py
+python3 bbs_bot_v10.py
 ```
 
 **Allow Fallback Auto Rooms:**
 *(If no strict matching rooms are found, it will join any valid auto room)*
 ```bash
-python3 bbs_bot_v9.py --allow-all-auto-rooms
+python3 bbs_bot_v10.py --allow-all-auto-rooms
 ```
 
 **Run for Debugging (Alignment Mode):**
-*(Saves the last 10 pre-click snapshots to `alignment_audit/`)*
+*(Saves a rolling buffer of visual snapshots to `alignment_audit/`)*
 ```bash
-python3 bbs_bot_v9.py --allow-all-auto-rooms --alignment-mode
+python3 bbs_bot_v10.py --allow-all-auto-rooms --alignment-mode
 ```
 
 ## Known Issues
-- **X11 Only**: Direct memory clicks and focus restoration rely on Xlib.
+- **X11 Only**: Click injection and focus restoration rely on X11 tools/APIs.
 - **Color Sensitive**: Matching can fail if your OS uses a non-standard color profile (HDR/10-bit). Keep display settings standard.
