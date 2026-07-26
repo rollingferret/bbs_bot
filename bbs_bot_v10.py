@@ -91,8 +91,6 @@ class BotConfiguration:
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
     ROOM_ROW_COOLDOWN: float = 6.0
     ROOM_ROW_BUCKET: int = 42
-    ROOM_SCAN_STABLE_FRAMES: int = 2
-    ROOM_SCAN_STABLE_GAP: float = 0.35
     ROOM_PRE_CLICK_RECHECK_GAP: float = 0.20
     MENU_TEMPLATE_MIN_Y_RATIO: float = 0.15
     PREFER_BOTTOM_ROOMS: bool = True
@@ -664,9 +662,6 @@ class BBSBot:
             logger.info(f"SCAN: Rejected {invalid_count} room row(s) with Room Rules Not Met.")
         return autos, signature, candidates
 
-    def room_candidate_signature(self, candidates):
-        return tuple(sorted((self.room_row_bucket(auto.top + auto.height // 2), mode) for auto, _, mode in candidates))
-
     def candidate_still_valid_before_click(self, row_y, mode):
         time.sleep(self.config.ROOM_PRE_CLICK_RECHECK_GAP)
         snap = self.capture_snapshot()
@@ -816,16 +811,6 @@ class BBSBot:
         autos, signature, candidates = self.build_room_candidates(haystack)
         if autos:
             self.note_room_list_signature(signature)
-            candidate_signature = self.room_candidate_signature(candidates)
-            if candidates and self.config.ROOM_SCAN_STABLE_FRAMES > 1:
-                time.sleep(self.config.ROOM_SCAN_STABLE_GAP)
-                stable_snapshot = self.capture_snapshot()
-                _, stable_room_signature, stable_candidates = self.build_room_candidates(stable_snapshot)
-                stable_candidate_signature = self.room_candidate_signature(stable_candidates)
-                if stable_room_signature != signature or stable_candidate_signature != candidate_signature:
-                    logger.info("SCAN: Room candidates changed during stability check; waiting.")
-                    return True
-                candidates = stable_candidates
             
             # Transparency: Log the scan results
             strict_count = sum(1 for _, _, m in candidates if m == "strict")
