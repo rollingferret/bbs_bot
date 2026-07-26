@@ -623,8 +623,8 @@ class BBSBot:
         if self.smart_click("search_again", reason, haystack=haystack):
             self.search_start_time = time.time()
             self._force_refresh = False
-            self._next_refresh_time = time.time() + self.refresh_delay()
             self.clear_room_fail_tracking("search again")
+            self._next_refresh_time = time.time() + self.refresh_delay()
             time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
             return True
         return False
