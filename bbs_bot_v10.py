@@ -62,8 +62,8 @@ class BotConfiguration:
     WAIT_RESTART: float = 5.0
 
     # Timeouts
-    TIMEOUT_STUCK: float = 300
-    TIMEOUT_QUEST_MAX: float = 600
+    TIMEOUT_STUCK: float = 90
+    TIMEOUT_QUEST_MAX: float = 480
     TIMEOUT_GAME_START: float = 120
     TIMEOUT_RUN_START: float = 180
     TIMEOUT_TAP_VERIFY: float = 25.0
@@ -157,6 +157,8 @@ class BotConfiguration:
             "network_title_error": "images/network_title_error.png",
             "download_data_title": "images/download_data_title.png", "download_data_yes": "images/download_data_yes.png",
             "brave_bonus_title": "images/brave_bonus_title.png", "brave_bonus_cancel": "images/brave_bonus_cancel.png",
+            "player_rank_reward_title": "images/player_rank_reward_title.png",
+            "player_rank_reward_close": "images/player_rank_reward_close.png",
         }
         self._apply_profile(self.START_PROFILE)
 
@@ -328,6 +330,7 @@ class BBSBot:
             "network_retry_button": 0.92, "network_title_error": 0.92,
             "download_data_title": 0.92, "download_data_yes": 0.92,
             "brave_bonus_title": 0.92, "brave_bonus_cancel": 0.92,
+            "player_rank_reward_title": 0.92, "player_rank_reward_close": 0.92,
         }
         return c.get(key, self.config.CONF_NORMAL)
 
@@ -387,6 +390,7 @@ class BBSBot:
             "unavailable_close",
             "closed_room_coop_quest_menu",
             "disconnect_retry", "network_retry_button", "download_data_yes", "brave_bonus_cancel",
+            "player_rank_reward_close",
         }
         if key in modal_actions:
             return True
@@ -400,8 +404,8 @@ class BBSBot:
             "LOBBY": {"ready", "unavailable_close", "close", "disconnect_retry"},
             "PENDING": {"ready", "unavailable_close", "close", "disconnect_retry", "retire"},
             "LIVE": {"ingame_auto_off", "retire", "disconnect_retry", "unavailable_close", "close"},
-            "FINISH": {"tap1", "tap2", "retry", "disconnect_retry", "close", "unavailable_close"},
-            "RECOVERY": {"unavailable_close", "close", "disconnect_retry", "close_news", "okay", "coop_quest", "open_coop_quest", "coop_1", "coop_2"},
+            "FINISH": {"tap1", "tap2", "retry", "disconnect_retry", "close", "unavailable_close", "player_rank_reward_close"},
+            "RECOVERY": {"unavailable_close", "close", "disconnect_retry", "close_news", "okay", "coop_quest", "open_coop_quest", "coop_1", "coop_2", "player_rank_reward_close"},
         }
         return key in allowed.get(phase, set())
 
@@ -733,6 +737,18 @@ class BBSBot:
             logger.warning("GLOBAL: Brave Bonus prompt confirmed; canceling for later claim")
             if self.smart_click("brave_bonus_cancel", "cancel brave bonus", verify_key="brave_bonus_cancel", haystack=haystack):
                 self.transition_to("RECOVERY")
+                return True
+
+        if self.find_image("player_rank_reward_title", haystack=haystack) and self.find_image("player_rank_reward_close", haystack=haystack):
+            logger.warning("GLOBAL: Player Rank Reward prompt confirmed")
+            if self.smart_click(
+                "player_rank_reward_close",
+                "dismiss player rank reward",
+                verify_key="player_rank_reward_title",
+                haystack=haystack,
+            ):
+                if self.state == "RECOVERY":
+                    self.transition_to("FINISH")
                 return True
 
         if self.has_network_error_context(haystack):
