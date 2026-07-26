@@ -131,7 +131,7 @@ class BotConfiguration:
             "SHIKAI_MAX": {
                 "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_READY": 0.90, "WAIT_SEARCH_AGAIN": 1.7,
                 "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
-                "WAIT_REFRESH_COOLDOWN": 2.0, "WAIT_STABILIZE_ANIMATION": 0.8,
+                "WAIT_REFRESH_COOLDOWN": 1.2, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8, "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
@@ -197,8 +197,8 @@ class BBSBot:
         ("GAME_STARTUP", "game_start"),
     ]
 
-    def __init__(self, config=BotConfiguration()):
-        self.config = config
+    def __init__(self, config=None):
+        self.config = config or BotConfiguration()
         pyautogui.FAILSAFE = False
         assert self.config.CIRCADIAN_PROFILES is not None
         self.active_profile = self.config.START_PROFILE
@@ -322,18 +322,27 @@ class BBSBot:
         except Exception: pass
 
     def save_hard_restart_snapshot(self, reason):
-        if not self.snapshot:
-            return
         try:
             self.ensure_snapshot_dirs()
             ts = int(time.time() * 1000)
             safe_reason = "".join(c if c.isalnum() or c in "-_" else "_" for c in reason)
             state = self.state
             base = f"error_snapshots/hard_restarts/restart_{safe_reason}_{state}_{ts}"
-            self.snapshot.save(f"{base}.png")
+            screenshot_status = "missing"
+            if not self.snapshot:
+                try:
+                    region = self.get_game_region()
+                    monitor = {"top": region[1], "left": region[0], "width": region[2], "height": region[3]}
+                    sct_img = self.sct.grab(monitor)
+                    self.snapshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
+                except Exception as e:
+                    screenshot_status = f"missing:{type(e).__name__}"
+            if self.snapshot:
+                self.snapshot.save(f"{base}.png")
+                screenshot_status = "saved"
             with open(f"{base}.txt", "w", encoding="utf-8") as f:
-                f.write(f"reason={reason}\nstate={state}\nrun_count={self.run_count}\n")
-            logger.error(f"Hard restart snapshot saved: {base}.png")
+                f.write(f"reason={reason}\nstate={state}\nrun_count={self.run_count}\nscreenshot={screenshot_status}\n")
+            logger.error(f"Hard restart evidence saved: {base} screenshot={screenshot_status}")
             self.prune_old_files("error_snapshots/hard_restarts", "restart_*.png", self.config.MAX_INCIDENT_SNAPSHOTS)
             self.prune_old_files("error_snapshots/hard_restarts", "restart_*.txt", self.config.MAX_INCIDENT_SNAPSHOTS)
         except Exception:
@@ -1041,7 +1050,7 @@ class BBSBot:
         if self.config.ALIGNMENT_MODE: self.save_debug_screenshot("lost_in_recovery")
         if self.close_coop_menu_modal(haystack=haystack, reason="recovery"):
             return True
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK: self.recover_game("recovery_timeout"); return True
+        if self.recovery_timed_out(): return True
         for s, t in self.RECOVERY_MAP:
             if self.find_image(t, haystack=haystack): self.transition_to(s); return True
         return False
@@ -1085,6 +1094,12 @@ class BBSBot:
     def reset_quest_watchdog(self, reason="progress"):
         logger.info(f"WATCHDOG Reset ({reason})"); self.quest_watchdog = time.time(); self.consecutive_recovery_count = 0
 
+    def recovery_timed_out(self):
+        if self.state == "RECOVERY" and time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK:
+            self.recover_game("recovery_timeout")
+            return True
+        return False
+
     def retire_from_quest(self, haystack=None):
         logger.warning("Retiring..."); self.expected_okay_context = "RETIRE_CONFIRM"
         if self.find_image("retire", haystack=haystack):
@@ -1092,9 +1107,12 @@ class BBSBot:
                 self.smart_click("okay", "confirm", verify_key="okay")
         self.expected_okay_context = None; self.transition_to("MENU"); return True
 
-    def recover_game(self, reason="hard_recover_game"):
-        self.save_hard_restart_snapshot(reason)
-        self.save_error_snapshot("hard_recover_game")
+    def recover_game(self, reason="hard_recover_game", capture_evidence=True):
+        if capture_evidence:
+            self.save_hard_restart_snapshot(reason)
+            self.save_error_snapshot("hard_recover_game")
+        else:
+            logger.info(f"Startup restart requested: {reason}")
         self.consecutive_recovery_count += 1
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES:
             logger.error("CIRCUIT BREAKER: Max consecutive recoveries reached. Exiting.")
@@ -1188,9 +1206,9 @@ class BBSBot:
         el = time.time() - self.fatigue_start_time
         self.fatigue_modifier = self.config.FATIGUE_BASE + self.config.FATIGUE_AMPLITUDE * abs(math.sin(el * (2 * math.pi / self.config.FATIGUE_PERIOD)))
 
-    def run(self, test_restart=False):
-        if test_restart: self.recover_game("test_restart")
-        self._load_templates(); self.check_dependencies(); self.reset_quest_watchdog("startup")
+    def run(self, restart_game_on_start=False):
+        if restart_game_on_start: self.recover_game("startup_restart", capture_evidence=False)
+        self.reset_quest_watchdog("startup")
         last_prop_sync = 0.0
         while True:
             try:
@@ -1206,6 +1224,7 @@ class BBSBot:
                 sct_img = self.sct.grab(monitor); self.snapshot = Image.frombytes("RGB", sct_img.size, sct_img.bgra, "raw", "BGRX")
                 
                 self.check_quest_watchdog(); self.update_fatigue(); self.check_circadian_rhythm(); self.check_session_limit()
+                if self.recovery_timed_out(): continue
                 if self.handle_global_popups(self.snapshot): continue
                 handler = self.handlers.get(self.state)
                 if handler and handler(self.snapshot): continue
@@ -1256,6 +1275,6 @@ if __name__ == "__main__":
     if args.top_rooms_first: config.PREFER_BOTTOM_ROOMS = False
     if args.no_refocus: config.RESTORE_FOCUS_AFTER_CLICK = False
     bot = BBSBot(config)
-    try: bot.run(test_restart=args.test_restart)
+    try: bot.run(restart_game_on_start=args.test_restart)
     except KeyboardInterrupt: bot.log_session_summary(); sys.exit(0)
     except Exception as e: logger.exception(f"Fatal: {e}"); bot.log_session_summary(); sys.exit(1)
