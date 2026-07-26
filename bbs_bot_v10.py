@@ -55,13 +55,11 @@ class BotConfiguration:
     DELAY_NEWS: float = 0.4
     DELAY_READY: float = 0.90
     WAIT_ROOM_LOAD: float = 1.0
-    WAIT_SEARCH_AGAIN: float = 3.2
+    WAIT_SEARCH_AGAIN: float = 2.4
     WAIT_LOBBY_READY: float = 0.3
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 2.0
-    WAIT_REFRESH_BACKOFF_STEP: float = 2.0
-    WAIT_REFRESH_BACKOFF_MAX: float = 12.0
-    ROOM_FAIL_REFRESH_DELAY: float = 1.5
+    ROOM_FAIL_REFRESH_DELAY: float = 0.9
     WAIT_DOWNLOAD_AFTER_CONFIRM: float = 45.0
     DELAY_POST_POPUP: float = 0.3
     WAIT_STABILIZE_ANIMATION: float = 1.2
@@ -82,7 +80,7 @@ class BotConfiguration:
     TIMEOUT_VERIFY_UI: float = 2.0
 
     # Wait Constants
-    WAIT_DISCONNECT_COOLING: Tuple[int, int] = (8, 16)
+    WAIT_DISCONNECT_COOLING: Tuple[int, int] = (2, 4)
 
     # Vision
     CONF_NORMAL: float = 0.80
@@ -99,7 +97,7 @@ class BotConfiguration:
     MAX_RULE_DISTANCE: int = 110
     SNATCH_BOX_OFFSET: Tuple[int, int] = (20, 10)
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
-    ROOM_ROW_COOLDOWN: float = 12.0
+    ROOM_ROW_COOLDOWN: float = 6.0
     ROOM_ROW_BUCKET: int = 42
     ROOM_SCAN_STABLE_FRAMES: int = 2
     ROOM_SCAN_STABLE_GAP: float = 0.35
@@ -136,6 +134,7 @@ class BotConfiguration:
     ALIGNMENT_MODE: bool = False
     MANAGE_INGAME_AUTO: bool = True
     RESTORE_FOCUS_AFTER_CLICK: bool = True
+    START_PROFILE: str = "SHIKAI_MAX"
 
     TEMPLATES: Optional[Dict[str, str]] = field(default=None)
 
@@ -143,14 +142,14 @@ class BotConfiguration:
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
                 "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_SNIPE": 0.20, "DELAY_POPUP": 1.5,
-                "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 1.0, "WAIT_SEARCH_AGAIN": 3.2,
+                "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 1.0, "WAIT_SEARCH_AGAIN": 2.4,
                 "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 2.0, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8, "DURATION_MINS": (45, 90),
             },
             "SHIKAI_NORMAL": {
                 "DELAY_COGNITIVE": (0.95, 0.10), "DELAY_SNIPE": 0.40, "DELAY_POPUP": 2.0,
-                "DELAY_READY": 1.10, "WAIT_ROOM_LOAD": 1.2, "WAIT_SEARCH_AGAIN": 4.0,
+                "DELAY_READY": 1.10, "WAIT_ROOM_LOAD": 1.2, "WAIT_SEARCH_AGAIN": 3.0,
                 "WAIT_LOBBY_READY": 0.6, "WAIT_POST_RETRY": 2.0, "WAIT_REFOCUS": 0.05,
                 "WAIT_REFRESH_COOLDOWN": 2.5, "WAIT_STABILIZE_ANIMATION": 1.2,
                 "TIMEOUT_VERIFY_UI": 1.4, "DURATION_MINS": (60, 180),
@@ -173,7 +172,7 @@ class BotConfiguration:
             "download_data_title": "images/download_data_title.png", "download_data_yes": "images/download_data_yes.png",
             "brave_bonus_title": "images/brave_bonus_title.png", "brave_bonus_cancel": "images/brave_bonus_cancel.png",
         }
-        self._apply_profile("SHIKAI_MAX")
+        self._apply_profile(self.START_PROFILE)
 
     def _apply_profile(self, profile_name: str):
         if self.CIRCADIAN_PROFILES:
@@ -185,7 +184,7 @@ class BotConfiguration:
             self.WAIT_ROOM_LOAD = s["WAIT_ROOM_LOAD"]
             self.WAIT_SEARCH_AGAIN = s["WAIT_SEARCH_AGAIN"]
             self.WAIT_LOBBY_READY = s["WAIT_LOBBY_READY"]
-            self.WAIT_POST_RETRY = 1.0
+            self.WAIT_POST_RETRY = s["WAIT_POST_RETRY"]
             self.WAIT_REFOCUS = s.get("WAIT_REFOCUS", 0.02)
             self.WAIT_REFRESH_COOLDOWN = s["WAIT_REFRESH_COOLDOWN"]
             self.WAIT_STABILIZE_ANIMATION = s["WAIT_STABILIZE_ANIMATION"]
@@ -214,7 +213,7 @@ class BBSBot:
         self.config = config
         pyautogui.FAILSAFE = False
         assert self.config.CIRCADIAN_PROFILES is not None
-        self.active_profile = "SHIKAI_MAX"
+        self.active_profile = self.config.START_PROFILE
         self.next_profile_swap = time.time() + random.randint(*self.config.CIRCADIAN_PROFILES[self.active_profile]["DURATION_MINS"]) * 60
         self.state, self.run_count, self.start_time = "RECOVERY", 0, time.time()
         self.next_distraction_run = 9999
@@ -263,7 +262,7 @@ class BBSBot:
         self.ensure_snapshot_dirs()
         self.prune_old_files("error_snapshots/routine", "error_*.png", self.config.MAX_ROUTINE_SNAPSHOTS)
         self.prune_old_files("error_snapshots/incidents", "error_*.png", self.config.MAX_INCIDENT_SNAPSHOTS)
-        logger.info("BBS Sentinel V10 Initialized.")
+        logger.info(f"BBS Sentinel V10 Initialized. profile={self.active_profile}")
 
     def _load_templates(self):
         if not self.config.TEMPLATES: return
@@ -631,11 +630,7 @@ class BBSBot:
         return True
 
     def refresh_delay(self):
-        backoff = min(
-            self.config.WAIT_REFRESH_BACKOFF_MAX,
-            self.config.WAIT_SEARCH_AGAIN + self._refresh_burst_count * self.config.WAIT_REFRESH_BACKOFF_STEP,
-        )
-        return backoff + random.uniform(0.15, 0.75)
+        return self.config.WAIT_SEARCH_AGAIN + random.uniform(0.15, 0.75)
 
     def click_search_again(self, haystack=None, reason="refresh list"):
         now = time.time()
@@ -648,6 +643,7 @@ class BBSBot:
             self._force_refresh = False
             self._refresh_burst_count += 1
             self._next_refresh_time = time.time() + self.refresh_delay()
+            self.clear_room_fail_tracking("search again")
             time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
             return True
         return False
@@ -1200,8 +1196,12 @@ if __name__ == "__main__":
     parser.add_argument("--short-coffee-breaks", action="store_true")
     parser.add_argument("--top-rooms-first", action="store_true")
     parser.add_argument("--no-refocus", action="store_true")
+    parser.add_argument("--profile", choices=["max", "normal"], default="max")
     args = parser.parse_args()
     config = BotConfiguration()
+    profile_map = {"max": "SHIKAI_MAX", "normal": "SHIKAI_NORMAL"}
+    config.START_PROFILE = profile_map[args.profile]
+    config._apply_profile(config.START_PROFILE)
     if args.allow_all_auto_rooms: config.ALLOW_ALL_AUTO_ROOMS = True
     if args.alignment_mode: config.ALIGNMENT_MODE = True
     if args.no_coffee_breaks: config.ENABLE_COFFEE_BREAKS = False
