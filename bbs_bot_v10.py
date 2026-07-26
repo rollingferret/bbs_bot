@@ -52,10 +52,10 @@ class BotConfiguration:
     DELAY_COGNITIVE: Tuple[float, float] = (0.78, 0.05)
     DELAY_NEWS: float = 0.4
     DELAY_READY: float = 0.90
-    WAIT_SEARCH_AGAIN: float = 1.8
+    WAIT_SEARCH_AGAIN: float = 1.7
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 2.0
-    ROOM_FAIL_REFRESH_DELAY: float = 0.9
+    ROOM_FAIL_REFRESH_DELAY: float = 0.6
     WAIT_DOWNLOAD_AFTER_CONFIRM: float = 45.0
     WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
@@ -129,7 +129,7 @@ class BotConfiguration:
     def __post_init__(self):
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
-                "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_READY": 0.90, "WAIT_SEARCH_AGAIN": 1.8,
+                "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_READY": 0.90, "WAIT_SEARCH_AGAIN": 1.7,
                 "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 2.0, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8, "DURATION_MINS": (45, 90),
