@@ -296,6 +296,7 @@ class BBSBot:
     def ensure_snapshot_dirs(self):
         os.makedirs("error_snapshots/routine", exist_ok=True)
         os.makedirs("error_snapshots/incidents", exist_ok=True)
+        os.makedirs("error_snapshots/hard_restarts", exist_ok=True)
 
     def save_debug_screenshot(self, name):
         if not self.snapshot: return
@@ -319,6 +320,24 @@ class BBSBot:
             keep = self.config.MAX_ROUTINE_SNAPSHOTS if bucket == "routine" else self.config.MAX_INCIDENT_SNAPSHOTS
             self.prune_old_files(f"error_snapshots/{bucket}", "error_*.png", keep)
         except Exception: pass
+
+    def save_hard_restart_snapshot(self, reason):
+        if not self.snapshot:
+            return
+        try:
+            self.ensure_snapshot_dirs()
+            ts = int(time.time() * 1000)
+            safe_reason = "".join(c if c.isalnum() or c in "-_" else "_" for c in reason)
+            state = self.state
+            base = f"error_snapshots/hard_restarts/restart_{safe_reason}_{state}_{ts}"
+            self.snapshot.save(f"{base}.png")
+            with open(f"{base}.txt", "w", encoding="utf-8") as f:
+                f.write(f"reason={reason}\nstate={state}\nrun_count={self.run_count}\n")
+            logger.error(f"Hard restart snapshot saved: {base}.png")
+            self.prune_old_files("error_snapshots/hard_restarts", "restart_*.png", self.config.MAX_INCIDENT_SNAPSHOTS)
+            self.prune_old_files("error_snapshots/hard_restarts", "restart_*.txt", self.config.MAX_INCIDENT_SNAPSHOTS)
+        except Exception:
+            pass
 
     def get_template_confidence(self, key):
         c = {
@@ -1022,7 +1041,7 @@ class BBSBot:
         if self.config.ALIGNMENT_MODE: self.save_debug_screenshot("lost_in_recovery")
         if self.close_coop_menu_modal(haystack=haystack, reason="recovery"):
             return True
-        if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK: self.recover_game(); return True
+        if time.time() - self.last_state_change_time > self.config.TIMEOUT_STUCK: self.recover_game("recovery_timeout"); return True
         for s, t in self.RECOVERY_MAP:
             if self.find_image(t, haystack=haystack): self.transition_to(s); return True
         return False
@@ -1073,7 +1092,8 @@ class BBSBot:
                 self.smart_click("okay", "confirm", verify_key="okay")
         self.expected_okay_context = None; self.transition_to("MENU"); return True
 
-    def recover_game(self):
+    def recover_game(self, reason="hard_recover_game"):
+        self.save_hard_restart_snapshot(reason)
         self.save_error_snapshot("hard_recover_game")
         self.consecutive_recovery_count += 1
         if self.consecutive_recovery_count > self.config.MAX_CONSECUTIVE_RECOVERIES:
@@ -1096,7 +1116,7 @@ class BBSBot:
         self.transition_to("GAME_STARTUP")
 
     def check_quest_watchdog(self):
-        if time.time() - self.quest_watchdog > self.config.TIMEOUT_QUEST_MAX: self.recover_game()
+        if time.time() - self.quest_watchdog > self.config.TIMEOUT_QUEST_MAX: self.recover_game("quest_watchdog")
 
     def ensure_window_ready(self):
         try:
@@ -1169,7 +1189,7 @@ class BBSBot:
         self.fatigue_modifier = self.config.FATIGUE_BASE + self.config.FATIGUE_AMPLITUDE * abs(math.sin(el * (2 * math.pi / self.config.FATIGUE_PERIOD)))
 
     def run(self, test_restart=False):
-        if test_restart: self.recover_game()
+        if test_restart: self.recover_game("test_restart")
         self._load_templates(); self.check_dependencies(); self.reset_quest_watchdog("startup")
         last_prop_sync = 0.0
         while True:
