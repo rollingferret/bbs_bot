@@ -849,8 +849,8 @@ class BBSBot:
             logger.warning("GLOBAL: Download data prompt confirmed")
             if self.smart_click("download_data_yes", "confirm download data", verify_key="download_data_yes", haystack=haystack):
                 self.reset_quest_watchdog("download-data")
-                self.transition_to("GAME_STARTUP")
                 time.sleep(self.config.WAIT_DOWNLOAD_AFTER_CONFIRM)
+                self.transition_to("RECOVERY")
                 return True
 
         if self.find_image("brave_bonus_title", haystack=haystack) and self.find_image("brave_bonus_cancel", haystack=haystack):
