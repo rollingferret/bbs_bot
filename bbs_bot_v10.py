@@ -55,7 +55,7 @@ class BotConfiguration:
     WAIT_SEARCH_AGAIN: float = 1.7
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 2.0
-    ROOM_FAIL_REFRESH_DELAY: float = 0.6
+    ROOM_FAIL_REFRESH_DELAY: float = 1.5
     WAIT_DOWNLOAD_AFTER_CONFIRM: float = 45.0
     WAIT_STABILIZE_ANIMATION: float = 1.2
     SAFETY_FLOOR_FACTOR: float = 0.05
@@ -89,9 +89,9 @@ class BotConfiguration:
     MAX_RULE_DISTANCE: int = 110
     SNATCH_BOX_OFFSET: Tuple[int, int] = (20, 10)
     SNATCH_BOX_DIM: Tuple[int, int] = (40, 20)
-    ROOM_ROW_COOLDOWN: float = 6.0
     ROOM_ROW_BUCKET: int = 42
     ROOM_PRE_CLICK_RECHECK_GAP: float = 0.20
+    JOIN_FAIL_LIST_GRACE: float = 3.2
     MENU_TEMPLATE_MIN_Y_RATIO: float = 0.15
     PREFER_BOTTOM_ROOMS: bool = True
 
@@ -209,7 +209,6 @@ class BBSBot:
         self._force_refresh = False
         self._next_refresh_time = 0.0
         self._last_room_signature = None
-        self._failed_room_rows: Dict[int, float] = {}
         self._last_join_row = None
         self.fatigue_modifier, self._last_popup_check = 1.0, 0.0
         self._last_id_search = 0.0
@@ -618,29 +617,17 @@ class BBSBot:
     def note_room_list_signature(self, signature):
         if signature != self._last_room_signature:
             if self._last_room_signature is not None:
-                logger.info("SCAN: Room list changed; clearing temporary row cooldowns.")
-            self._failed_room_rows.clear()
+                logger.info("SCAN: Room list changed.")
             self._last_room_signature = signature
 
     def room_row_bucket(self, y):
         return round(y / self.config.ROOM_ROW_BUCKET) * self.config.ROOM_ROW_BUCKET
 
-    def mark_last_room_failed(self, reason):
+    def log_last_room_failed(self, reason):
         if self._last_join_row is None:
             return
         row = self.room_row_bucket(self._last_join_row)
-        self._failed_room_rows[row] = time.time() + self.config.ROOM_ROW_COOLDOWN
-        logger.info(f"ROOM FAIL: {reason}; cooling row {row} for {self.config.ROOM_ROW_COOLDOWN:.0f}s")
-
-    def row_on_cooldown(self, y):
-        row = self.room_row_bucket(y)
-        expires = self._failed_room_rows.get(row)
-        if not expires:
-            return False
-        if time.time() >= expires:
-            del self._failed_room_rows[row]
-            return False
-        return True
+        logger.info(f"ROOM FAIL: {reason}; forcing Search Again after row {row}")
 
     def refresh_delay(self):
         return self.config.WAIT_SEARCH_AGAIN + random.uniform(0.15, 0.75)
@@ -654,14 +641,14 @@ class BBSBot:
         if self.smart_click("search_again", reason, haystack=haystack):
             self.search_start_time = time.time()
             self._force_refresh = False
-            self.clear_room_fail_tracking("search again")
+            self.clear_room_scan_tracking("search again")
             self._next_refresh_time = time.time() + self.refresh_delay()
             time.sleep(self.config.WAIT_REFRESH_COOLDOWN)
             return True
         return False
 
     def route_room_fail(self, key):
-        self.mark_last_room_failed(key)
+        self.log_last_room_failed(key)
         self.search_start_time = time.time()
         self._force_refresh = True
         self._next_refresh_time = time.time() + self.config.ROOM_FAIL_REFRESH_DELAY
@@ -705,13 +692,21 @@ class BBSBot:
             if candidate_row == row and candidate_mode == mode:
                 return True
         logger.info(f"SCAN: Candidate row {row} failed pre-click rule recheck; skipping.")
-        self._failed_room_rows[row] = time.time() + self.config.ROOM_ROW_COOLDOWN
         return False
 
-    def clear_room_fail_tracking(self, reason):
-        if self._failed_room_rows or self._last_room_signature is not None:
-            logger.info(f"SCAN: Clearing room failure tracking ({reason}).")
-        self._failed_room_rows.clear()
+    def clicked_row_has_room_not_met(self, haystack=None):
+        if self._last_join_row is None:
+            return False
+        clicked_row = self.room_row_bucket(self._last_join_row)
+        for marker in self.find_all("room_not_met", confidence=self.config.CONF_POPUP, haystack=haystack):
+            marker_row = self.room_row_bucket(marker.top + marker.height // 2)
+            if marker_row == clicked_row:
+                return True
+        return False
+
+    def clear_room_scan_tracking(self, reason):
+        if self._last_room_signature is not None or self._last_join_row is not None:
+            logger.info(f"SCAN: Clearing room scan tracking ({reason}).")
         self._last_room_signature = None
         self._last_join_row = None
         self._next_refresh_time = 0.0
@@ -860,9 +855,6 @@ class BBSBot:
                 skipped = 0
                 for auto, rule, mode in candidates:
                     row_y = auto.top + auto.height // 2
-                    if self.row_on_cooldown(row_y):
-                        skipped += 1
-                        continue
                     if not self.candidate_still_valid_before_click(row_y, mode):
                         skipped += 1
                         continue
@@ -879,7 +871,7 @@ class BBSBot:
                         self.transition_to("JOIN_PENDING")
                         return True
                 if skipped:
-                    logger.info(f"SCAN: Skipped {skipped} recently failed room row(s).")
+                    logger.info(f"SCAN: Skipped {skipped} invalid room row(s); refreshing list.")
                     self._force_refresh = True
                 return True
         
@@ -928,27 +920,27 @@ class BBSBot:
     def handle_join_pending(self, haystack=None):
         ready_box = self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3)
         if ready_box:
-            self.clear_room_fail_tracking("ready found")
+            self.clear_room_scan_tracking("ready found")
             ready_sleep_start = time.perf_counter()
             time.sleep(self.config.DELAY_READY)
             logger.info(f"READY TRACE: delay_ready={time.perf_counter() - ready_sleep_start:.3f}s configured={self.config.DELAY_READY:.2f}")
             return self.smart_click(ready_box, "snap ready", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
         if self.run_started():
-            self.clear_room_fail_tracking("run started before ready")
+            self.clear_room_scan_tracking("run started before ready")
             self.transition_to("RUNNING")
             return True
         if self.close_room_fail_modal(haystack=haystack, reason="closed_room_coop_quest_menu"):
             return True
-        if self.find_image("room_not_met", haystack=haystack) and self.has_room_list_context(haystack):
-            logger.info("JOIN_PENDING: Room rules not met row visible; treating join as failed.")
-            self.mark_last_room_failed("room_not_met")
+        if self.clicked_row_has_room_not_met(haystack=haystack) and self.has_room_list_context(haystack):
+            logger.info("JOIN_PENDING: Clicked room row shows rules not met; treating join as failed.")
+            self.log_last_room_failed("room_not_met")
             self._force_refresh = True
             self.transition_to("SCAN_ROOMS")
             return True
-        if time.time() - self.last_state_change_time > 2.0:
+        if time.time() - self.last_state_change_time > self.config.JOIN_FAIL_LIST_GRACE:
             if self.find_image("auto", haystack=haystack) or self.find_image("search_again", haystack=haystack):
                 logger.info("Room join failed silently. Forcing list refresh.")
-                self.mark_last_room_failed("silent join fail")
+                self.log_last_room_failed("silent join fail")
                 self._force_refresh = True
                 self.transition_to("SCAN_ROOMS"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_LOBBY_JOIN: self.transition_to("RECOVERY"); return True
@@ -957,13 +949,13 @@ class BBSBot:
     def handle_ready(self, haystack=None):
         ready_box = self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3)
         if ready_box:
-            self.clear_room_fail_tracking("ready state")
+            self.clear_room_scan_tracking("ready state")
             ready_sleep_start = time.perf_counter()
             time.sleep(self.config.DELAY_READY)
             logger.info(f"READY TRACE: delay_ready={time.perf_counter() - ready_sleep_start:.3f}s configured={self.config.DELAY_READY:.2f}")
             return self.smart_click(ready_box, "ready button", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
         if self.run_started():
-            self.clear_room_fail_tracking("run started before ready")
+            self.clear_room_scan_tracking("run started before ready")
             self.transition_to("RUNNING")
             return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest(haystack=haystack); return True
@@ -974,7 +966,7 @@ class BBSBot:
 
     def handle_check_run_start(self, haystack=None):
         if self.run_started():
-            self.clear_room_fail_tracking("run started")
+            self.clear_room_scan_tracking("run started")
             self.transition_to("RUNNING"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest(haystack=haystack); return True
         return False
