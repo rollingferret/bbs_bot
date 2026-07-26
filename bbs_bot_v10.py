@@ -179,6 +179,10 @@ def human_delay(profile, fatigue=1.0, safety_factor=0.05):
     delay = random.gauss(mu * fatigue, sigma)
     time.sleep(max(delay, (mu * fatigue) * safety_factor))
 
+
+def ready_trace_enabled(description):
+    return description in {"snap ready", "ready button"}
+
 class GameWindowNotFoundError(Exception): pass
 
 class BBSBot:
@@ -405,18 +409,36 @@ class BBSBot:
     def smart_click(self, target, description, verify_key=None, target_state=None, wait_for_appearance=False, custom_delay=None, confidence=None, haystack=None, verify_timeout=None, expected_context=None):
         if isinstance(target, str) and not self.can_click(target, expected_context=expected_context):
             logger.error(f"SAFETY BLOCK: {target} in {self.current_phase()} phase"); time.sleep(0.5); return False
-        human_delay(custom_delay or self.config.DELAY_COGNITIVE, self.fatigue_modifier, self.config.SAFETY_FLOOR_FACTOR)
+        trace_ready = ready_trace_enabled(description)
+        trace_start = time.perf_counter()
+        click_profile = custom_delay or self.config.DELAY_COGNITIVE
+        human_delay(click_profile, self.fatigue_modifier, self.config.SAFETY_FLOOR_FACTOR)
+        if trace_ready:
+            logger.info(
+                f"READY TRACE: smart_click delay={time.perf_counter() - trace_start:.3f}s "
+                f"profile={click_profile} fatigue={self.fatigue_modifier:.3f}"
+            )
+        locate_start = time.perf_counter()
         conf = confidence or self.get_template_confidence(target if isinstance(target, str) else "")
         box = self.find_image(target, confidence=conf, haystack=haystack) if isinstance(target, str) else target
+        if trace_ready:
+            logger.info(f"READY TRACE: smart_click locate={time.perf_counter() - locate_start:.3f}s found={bool(box)}")
         if not box: return verify_key == target and not wait_for_appearance
         mu_x, mu_y = box.left + box.width / 2, box.top + box.height / 2
         click_x, click_y = int(random.gauss(mu_x, box.width / 10)), int(random.gauss(mu_y, box.height / 10))
         if self.region:
             click_x = max(self.region[0], min(click_x, self.region[0] + self.region[2] - 1))
             click_y = max(self.region[1], min(click_y, self.region[1] + self.region[3] - 1))
-        if self.config.ALIGNMENT_MODE: self.save_debug_screenshot(f"pre_click_{description.replace(' ', '_')}")
+        if self.config.ALIGNMENT_MODE:
+            screenshot_start = time.perf_counter()
+            self.save_debug_screenshot(f"pre_click_{description.replace(' ', '_')}")
+            if trace_ready:
+                logger.info(f"READY TRACE: pre_click_screenshot={time.perf_counter() - screenshot_start:.3f}s")
+        focus_start = time.perf_counter()
         cur_focus = None
         cur_focus = self.current_active_window()
+        if trace_ready:
+            logger.info(f"READY TRACE: focus_lookup={time.perf_counter() - focus_start:.3f}s")
         if cur_focus and cur_focus != self.win_id:
             self._last_non_game_focus = cur_focus
         restore_focus = cur_focus
@@ -427,18 +449,29 @@ class BBSBot:
                 f"FOCUS: before click '{description}' active={self.window_label(cur_focus)} "
                 f"game={self.window_label(self.win_id)} restore={self.window_label(restore_focus)}"
             )
+        click_start = time.perf_counter()
         success = self._send_x11_click(click_x, click_y)
+        if trace_ready:
+            logger.info(f"READY TRACE: x11_click={time.perf_counter() - click_start:.3f}s success={success}")
         logger.info(f"CLICK [Run:{self.run_count}]: {description} at ({click_x}, {click_y})")
         if success and restore_focus:
+            restore_start = time.perf_counter()
             self.restore_previous_focus(restore_focus)
+            if trace_ready:
+                logger.info(f"READY TRACE: focus_restore={time.perf_counter() - restore_start:.3f}s")
         if success and verify_key:
+            verify_start = time.perf_counter()
             start, limit = time.time(), (verify_timeout or self.config.TIMEOUT_VERIFY_UI)
             while time.time() - start < limit:
                 found = self.find_image(verify_key, confidence=self.config.CONF_VERIFY_ACTION)
                 if (wait_for_appearance and found) or (not wait_for_appearance and not found):
+                    if trace_ready:
+                        logger.info(f"READY TRACE: verify={time.perf_counter() - verify_start:.3f}s found={bool(found)}")
                     if target_state: self.transition_to(target_state)
                     return True
                 time.sleep(self.config.POLL_UI_VERIFY)
+            if trace_ready:
+                logger.info(f"READY TRACE: verify_timeout={time.perf_counter() - verify_start:.3f}s")
             return False
         if success and target_state: self.transition_to(target_state)
         return success
@@ -893,10 +926,17 @@ class BBSBot:
         return unique
 
     def handle_join_pending(self, haystack=None):
-        if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
+        ready_box = self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3)
+        if ready_box:
             self.clear_room_fail_tracking("ready found")
+            ready_sleep_start = time.perf_counter()
             time.sleep(self.config.DELAY_READY)
-            return self.smart_click("ready", "snap ready", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
+            logger.info(f"READY TRACE: delay_ready={time.perf_counter() - ready_sleep_start:.3f}s configured={self.config.DELAY_READY:.2f}")
+            return self.smart_click(ready_box, "snap ready", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
+        if self.run_started():
+            self.clear_room_fail_tracking("run started before ready")
+            self.transition_to("RUNNING")
+            return True
         if self.close_room_fail_modal(haystack=haystack, reason="closed_room_coop_quest_menu"):
             return True
         if self.find_image("room_not_met", haystack=haystack) and self.has_room_list_context(haystack):
@@ -915,15 +955,25 @@ class BBSBot:
         return False
 
     def handle_ready(self, haystack=None):
-        if self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3):
+        ready_box = self.find_stable_image("ready", confidence=self.config.CONF_READY, frames=3)
+        if ready_box:
             self.clear_room_fail_tracking("ready state")
+            ready_sleep_start = time.perf_counter()
             time.sleep(self.config.DELAY_READY)
-            return self.smart_click("ready", "ready button", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
+            logger.info(f"READY TRACE: delay_ready={time.perf_counter() - ready_sleep_start:.3f}s configured={self.config.DELAY_READY:.2f}")
+            return self.smart_click(ready_box, "ready button", verify_key="ready", target_state="CHECK_RUN_START", haystack=haystack)
+        if self.run_started():
+            self.clear_room_fail_tracking("run started before ready")
+            self.transition_to("RUNNING")
+            return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest(haystack=haystack); return True
         return False
 
+    def run_started(self):
+        return self.find_stable_image("ingame_auto_on", frames=3) or self.find_stable_image("ingame_auto_off", frames=3)
+
     def handle_check_run_start(self, haystack=None):
-        if self.find_stable_image("ingame_auto_on", frames=3) or self.find_stable_image("ingame_auto_off", frames=3): 
+        if self.run_started():
             self.clear_room_fail_tracking("run started")
             self.transition_to("RUNNING"); return True
         if time.time() - self.last_state_change_time > self.config.TIMEOUT_RUN_START: self.retire_from_quest(haystack=haystack); return True
