@@ -55,7 +55,7 @@ class BotConfiguration:
     DELAY_NEWS: float = 0.4
     DELAY_READY: float = 0.90
     WAIT_ROOM_LOAD: float = 1.0
-    WAIT_SEARCH_AGAIN: float = 2.4
+    WAIT_SEARCH_AGAIN: float = 1.8
     WAIT_LOBBY_READY: float = 0.3
     WAIT_REFOCUS: float = 0.02
     WAIT_REFRESH_COOLDOWN: float = 2.0
@@ -142,7 +142,7 @@ class BotConfiguration:
         self.CIRCADIAN_PROFILES = {
             "SHIKAI_MAX": {
                 "DELAY_COGNITIVE": (0.78, 0.05), "DELAY_SNIPE": 0.20, "DELAY_POPUP": 1.5,
-                "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 1.0, "WAIT_SEARCH_AGAIN": 2.4,
+                "DELAY_READY": 0.90, "WAIT_ROOM_LOAD": 1.0, "WAIT_SEARCH_AGAIN": 1.8,
                 "WAIT_LOBBY_READY": 0.3, "WAIT_POST_RETRY": 1.0, "WAIT_REFOCUS": 0.02,
                 "WAIT_REFRESH_COOLDOWN": 2.0, "WAIT_STABILIZE_ANIMATION": 0.8,
                 "TIMEOUT_VERIFY_UI": 0.8, "DURATION_MINS": (45, 90),
