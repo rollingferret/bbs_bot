@@ -21,6 +21,7 @@ CLAUDE.md
 .claude/
 .qwen/
 .gemini/
+.gemini_tmp/
 .codex/
 
 # Logs
