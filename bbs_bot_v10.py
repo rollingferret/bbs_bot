@@ -54,6 +54,7 @@ class BotConfiguration:
     DELAY_READY: float = 0.90
     WAIT_SEARCH_AGAIN: float = 1.7
     WAIT_REFOCUS: float = 0.02
+    WAIT_REFOCUS_FALLBACK_MAX_AGE: float = 10.0
     WAIT_REFRESH_COOLDOWN: float = 2.0
     ROOM_FAIL_REFRESH_DELAY: float = 1.5
     WAIT_DOWNLOAD_AFTER_CONFIRM: float = 45.0
@@ -216,6 +217,8 @@ class BBSBot:
         self._last_id_search = 0.0
         self._props_applied_to = None
         self._last_non_game_focus = None
+        self._last_non_game_focus_at = 0.0
+        self._loop_restore_focus = None
         self._run_counted = False
         self.disconnect_retry_count = 0
         self.handlers = {
@@ -230,7 +233,6 @@ class BBSBot:
         self.template_variants = {}
         self._load_templates()
         self.check_dependencies()
-        self._last_non_game_focus = self.current_active_window()
         try:
             self.disp = display.Display()
             self.sct = mss.mss()
@@ -466,15 +468,9 @@ class BBSBot:
             if trace_ready:
                 logger.info(f"READY TRACE: pre_click_screenshot={time.perf_counter() - screenshot_start:.3f}s")
         focus_start = time.perf_counter()
-        cur_focus = None
-        cur_focus = self.current_active_window()
+        cur_focus, restore_focus = self.restore_focus_for_click()
         if trace_ready:
             logger.info(f"READY TRACE: focus_lookup={time.perf_counter() - focus_start:.3f}s")
-        if cur_focus and cur_focus != self.win_id:
-            self._last_non_game_focus = cur_focus
-        restore_focus = cur_focus
-        if cur_focus == self.win_id and self._last_non_game_focus:
-            restore_focus = self._last_non_game_focus
         if self.config.ALIGNMENT_MODE:
             logger.info(
                 f"FOCUS: before click '{description}' active={self.window_label(cur_focus)} "
@@ -508,7 +504,7 @@ class BBSBot:
         return success
 
     def restore_previous_focus(self, cur_focus):
-        if not self.config.RESTORE_FOCUS_AFTER_CLICK or not cur_focus or cur_focus == self.win_id:
+        if not self.config.RESTORE_FOCUS_AFTER_CLICK or not self.is_valid_restore_window(cur_focus):
             return
         time.sleep(self.config.WAIT_REFOCUS)
         try:
@@ -525,6 +521,48 @@ class BBSBot:
                 logger.info(f"FOCUS: restored active={self.window_label(active)} target={self.window_label(cur_focus)}")
         except Exception:
             return
+
+    def capture_loop_focus(self):
+        self._loop_restore_focus = None
+        focus = self.current_active_window()
+        if self.is_valid_restore_window(focus):
+            self.remember_user_focus(focus)
+            self._loop_restore_focus = focus
+        elif self.config.ALIGNMENT_MODE:
+            logger.info(f"FOCUS: loop sample ignored active={self.window_label(focus)} game={self.window_label(self.win_id)}")
+
+    def restore_focus_for_click(self):
+        cur_focus = self.current_active_window()
+        if self.is_valid_restore_window(cur_focus):
+            self.remember_user_focus(cur_focus)
+            return cur_focus, cur_focus
+        if self.is_valid_restore_window(self._loop_restore_focus):
+            return cur_focus, self._loop_restore_focus
+        if self.recent_user_focus_is_valid():
+            return cur_focus, self._last_non_game_focus
+        return cur_focus, None
+
+    def remember_user_focus(self, window_id):
+        self._last_non_game_focus = window_id
+        self._last_non_game_focus_at = time.time()
+
+    def recent_user_focus_is_valid(self):
+        if time.time() - self._last_non_game_focus_at > self.config.WAIT_REFOCUS_FALLBACK_MAX_AGE:
+            return False
+        return self.is_valid_restore_window(self._last_non_game_focus)
+
+    def is_valid_restore_window(self, window_id):
+        if not window_id or window_id == self.win_id:
+            return False
+        try:
+            return subprocess.run(
+                ["xdotool", "getwindowname", str(window_id)],
+                capture_output=True,
+                text=True,
+                timeout=0.25,
+            ).returncode == 0
+        except Exception:
+            return False
 
     @staticmethod
     def current_active_window():
@@ -1216,6 +1254,8 @@ class BBSBot:
                     logger.warning("Game window not found; waiting...")
                     time.sleep(2.0)
                     continue
+
+                self.capture_loop_focus()
 
                 if time.time() - last_prop_sync > self.config.POLL_PROPERTY_SYNC:
                     self.setup_window_properties(); last_prop_sync = time.time()
