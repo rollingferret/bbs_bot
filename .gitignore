@@ -31,6 +31,7 @@ screenshots/
 alignment_audit/
 error_snapshots/
 diagnostics/
+traces/
 
 # Telemetry
 agent_telemetry/
