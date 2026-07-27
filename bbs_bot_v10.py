@@ -156,6 +156,7 @@ class BotConfiguration:
             "network_retry_button": "images/network_retry_button.png",
             "network_title_error": "images/network_title_error.png",
             "download_data_title": "images/download_data_title.png", "download_data_yes": "images/download_data_yes.png",
+            "login_failed_title": "images/login_failed_title.png", "login_failed_ok": "images/login_failed_ok.png",
             "brave_bonus_title": "images/brave_bonus_title.png", "brave_bonus_cancel": "images/brave_bonus_cancel.png",
             "player_rank_reward_title": "images/player_rank_reward_title.png",
             "player_rank_reward_close": "images/player_rank_reward_close.png",
@@ -359,6 +360,7 @@ class BBSBot:
             "tap1": 0.90, "tap2": 0.90, "retry": 0.90,
             "network_retry_button": 0.92, "network_title_error": 0.92,
             "download_data_title": 0.92, "download_data_yes": 0.92,
+            "login_failed_title": 0.92, "login_failed_ok": 0.92,
             "brave_bonus_title": 0.92, "brave_bonus_cancel": 0.92,
             "player_rank_reward_title": 0.92, "player_rank_reward_close": 0.92,
         }
@@ -420,7 +422,7 @@ class BBSBot:
             "unavailable_close",
             "closed_room_coop_quest_menu",
             "disconnect_retry", "network_retry_button", "download_data_yes", "brave_bonus_cancel",
-            "player_rank_reward_close",
+            "login_failed_ok", "player_rank_reward_close",
         }
         if key in modal_actions:
             return True
@@ -853,6 +855,12 @@ class BBSBot:
                 self.transition_to("RECOVERY")
                 return True
 
+        if self.find_image("login_failed_title", haystack=haystack) and self.find_image("login_failed_ok", haystack=haystack):
+            logger.warning("GLOBAL: Login failed prompt confirmed")
+            if self.smart_click("login_failed_ok", "dismiss login failed", verify_key="login_failed_title", haystack=haystack):
+                self.transition_to("RECOVERY")
+                return True
+
         if self.find_image("brave_bonus_title", haystack=haystack) and self.find_image("brave_bonus_cancel", haystack=haystack):
             logger.warning("GLOBAL: Brave Bonus prompt confirmed; canceling for later claim")
             if self.smart_click("brave_bonus_cancel", "cancel brave bonus", verify_key="brave_bonus_cancel", haystack=haystack):
@@ -1100,6 +1108,10 @@ class BBSBot:
         return False
 
     def handle_running(self, haystack=None):
+        if self.find_image("game_start", haystack=haystack):
+            logger.warning("RUNNING: Title screen visible; reanchoring.")
+            self.transition_to("RECOVERY")
+            return True
         if self.find_stable_image("tap1", frames=3): self.transition_to("FINISH"); return True
         time.sleep(self.config.POLL_RUNNING); return False
 
