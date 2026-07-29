@@ -105,8 +105,11 @@ class BotConfiguration:
     SESSION_MAX_HOURS: int = 16
     POLL_MAIN_LOOP: float = 0.1
     POLL_UI_VERIFY: float = 0.1
-    POLL_POPUP: float = 0.5
-    POLL_RUNNING: float = 0.5
+    POLL_POPUP: float = 0.75
+    POLL_RUNNING: float = 1.0
+    POLL_MENU: float = 0.20
+    POLL_RECOVERY: float = 0.25
+    POLL_GAME_STARTUP: float = 0.30
 
     CASUAL_LINGER_RUNS: Tuple[int, int] = (8, 16)
     ENABLE_COFFEE_BREAKS: bool = True
@@ -188,6 +191,106 @@ def human_delay(profile, fatigue=1.0, safety_factor=0.05):
 
 def ready_trace_enabled(description):
     return description in {"snap ready", "ready button"}
+
+
+def parse_cpu_list(value):
+    cpus = set()
+    for part in value.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            start, end = part.split("-", 1)
+            cpus.update(range(int(start), int(end) + 1))
+        else:
+            cpus.add(int(part))
+    return cpus
+
+
+def parse_cpu_affinity(value):
+    value = value.strip()
+    if value.lower() == "auto":
+        return choose_auto_cpu_affinity()
+    cpus = parse_cpu_list(value)
+    if not cpus:
+        raise ValueError("CPU affinity cannot be empty")
+    return cpus
+
+
+def read_cpu_times():
+    times = {}
+    with open("/proc/stat", "r", encoding="utf-8") as f:
+        for line in f:
+            parts = line.split()
+            if not parts or not parts[0].startswith("cpu") or parts[0] == "cpu":
+                continue
+            cpu = int(parts[0][3:])
+            values = [int(v) for v in parts[1:]]
+            idle = values[3] + (values[4] if len(values) > 4 else 0)
+            total = sum(values)
+            times[cpu] = (idle, total)
+    return times
+
+
+def read_cpu_siblings(cpu):
+    path = f"/sys/devices/system/cpu/cpu{cpu}/topology/thread_siblings_list"
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return frozenset(parse_cpu_list(f.read().strip()))
+    except Exception:
+        return frozenset({cpu})
+
+
+def choose_auto_cpu_affinity(count=4, sample_seconds=1.5):
+    allowed = set(os.sched_getaffinity(0))
+    before = read_cpu_times()
+    time.sleep(sample_seconds)
+    after = read_cpu_times()
+    usage = {}
+    for cpu in allowed:
+        if cpu not in before or cpu not in after:
+            continue
+        idle_before, total_before = before[cpu]
+        idle_after, total_after = after[cpu]
+        total_delta = max(1, total_after - total_before)
+        idle_delta = idle_after - idle_before
+        usage[cpu] = 1.0 - (idle_delta / total_delta)
+
+    groups = {}
+    for cpu in sorted(allowed):
+        group = read_cpu_siblings(cpu) & allowed
+        groups.setdefault(group or frozenset({cpu}), []).append(cpu)
+
+    preferred = []
+    for group_cpus in groups.values():
+        best = min(group_cpus, key=lambda cpu: usage.get(cpu, 1.0))
+        preferred.append(best)
+
+    ranked = sorted(preferred, key=lambda cpu: usage.get(cpu, 1.0))
+    cpus = set(ranked[: min(count, len(ranked))])
+    if not cpus:
+        raise ValueError("CPU affinity auto-selection found no available CPUs")
+    return cpus
+
+
+def format_cpu_affinity(cpus):
+    return ",".join(str(c) for c in sorted(cpus))
+
+
+def describe_cpu_affinity_source(value):
+    return "auto-selected" if value.strip().lower() == "auto" else "pinned"
+
+
+def apply_cpu_affinity(value):
+    try:
+        cpus = parse_cpu_affinity(value)
+        os.sched_setaffinity(0, cpus)
+        logger.info(f"CPU affinity {describe_cpu_affinity_source(value)} to: {format_cpu_affinity(cpus)}")
+    except AttributeError:
+        logger.warning("CPU affinity is not supported on this platform.")
+    except Exception as e:
+        logger.warning(f"CPU affinity '{value}' could not be applied: {e}")
+
 
 class GameWindowNotFoundError(Exception): pass
 
@@ -1122,7 +1225,7 @@ class BBSBot:
             self.transition_to("RECOVERY")
             return True
         if self.find_stable_image("tap1", frames=3): self.transition_to("FINISH"); return True
-        time.sleep(self.config.POLL_RUNNING); return False
+        return False
 
     def handle_finish(self, haystack=None):
         if not self._run_counted: self.run_count += 1; self._run_counted = True
@@ -1346,13 +1449,21 @@ class BBSBot:
                 if self.handle_global_popups(self.snapshot): continue
                 handler = self.handlers.get(self.state)
                 if handler and handler(self.snapshot): continue
-                time.sleep(self.config.POLL_MAIN_LOOP)
+                time.sleep(self.state_idle_delay())
             except Exception:
                 logger.exception("Loop Error:")
                 self.save_error_snapshot("fatal_loop_error")
                 self.transition_to("RECOVERY")
                 time.sleep(1)
         self.log_session_summary()
+
+    def state_idle_delay(self):
+        return {
+            "MENU": self.config.POLL_MENU,
+            "RECOVERY": self.config.POLL_RECOVERY,
+            "GAME_STARTUP": self.config.POLL_GAME_STARTUP,
+            "RUNNING": self.config.POLL_RUNNING,
+        }.get(self.state, self.config.POLL_MAIN_LOOP)
 
     def log_session_summary(self):
         elapsed = time.time() - self.start_time
@@ -1381,7 +1492,9 @@ if __name__ == "__main__":
     parser.add_argument("--top-rooms-first", action="store_true")
     parser.add_argument("--no-refocus", action="store_true")
     parser.add_argument("--profile", choices=["max", "normal"], default="max")
+    parser.add_argument("--cpu-affinity", help="Pin bot process to CPU cores, e.g. auto, 8-11, or 8,9,10,11")
     args = parser.parse_args()
+    if args.cpu_affinity: apply_cpu_affinity(args.cpu_affinity)
     config = BotConfiguration()
     profile_map = {"max": "SHIKAI_MAX", "normal": "SHIKAI_NORMAL"}
     config.START_PROFILE = profile_map[args.profile]
