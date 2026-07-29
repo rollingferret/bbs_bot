@@ -156,6 +156,9 @@ class BotConfiguration:
             "network_retry_button": "images/network_retry_button.png",
             "network_title_error": "images/network_title_error.png",
             "download_data_title": "images/download_data_title.png", "download_data_yes": "images/download_data_yes.png",
+            "update_return_title": "images/update_return_title.png",
+            "update_return_message": "images/update_return_message.png",
+            "update_return_ok": "images/update_return_ok.png",
             "login_failed_title": "images/login_failed_title.png", "login_failed_ok": "images/login_failed_ok.png",
             "brave_bonus_title": "images/brave_bonus_title.png", "brave_bonus_cancel": "images/brave_bonus_cancel.png",
             "player_rank_reward_title": "images/player_rank_reward_title.png",
@@ -286,15 +289,9 @@ class BBSBot:
 
     @staticmethod
     def error_snapshot_bucket(reason):
-        routine = {
-            "recovery_from_MENU",
-            "recovery_from_ENTER_ROOM_LIST",
-            "recovery_from_JOIN_PENDING",
-            "recovery_from_SCAN_ROOMS",
-            "recovery_from_FINISH",
-            "recovery_from_DISTRACTION",
-        }
-        return "routine" if reason in routine else "incidents"
+        if reason.startswith("recovery_from_"):
+            return "routine"
+        return "incidents"
 
     def ensure_snapshot_dirs(self):
         os.makedirs("error_snapshots/routine", exist_ok=True)
@@ -360,6 +357,7 @@ class BBSBot:
             "tap1": 0.90, "tap2": 0.90, "retry": 0.90,
             "network_retry_button": 0.92, "network_title_error": 0.92,
             "download_data_title": 0.92, "download_data_yes": 0.92,
+            "update_return_title": 0.92, "update_return_message": 0.92, "update_return_ok": 0.92,
             "login_failed_title": 0.92, "login_failed_ok": 0.92,
             "brave_bonus_title": 0.92, "brave_bonus_cancel": 0.92,
             "player_rank_reward_title": 0.92, "player_rank_reward_close": 0.92,
@@ -422,7 +420,7 @@ class BBSBot:
             "unavailable_close",
             "closed_room_coop_quest_menu",
             "disconnect_retry", "network_retry_button", "download_data_yes", "brave_bonus_cancel",
-            "login_failed_ok", "player_rank_reward_close",
+            "update_return_ok", "login_failed_ok", "player_rank_reward_close",
         }
         if key in modal_actions:
             return True
@@ -852,6 +850,17 @@ class BBSBot:
             if self.smart_click("download_data_yes", "confirm download data", verify_key="download_data_yes", haystack=haystack):
                 self.reset_quest_watchdog("download-data")
                 time.sleep(self.config.WAIT_DOWNLOAD_AFTER_CONFIRM)
+                self.transition_to("RECOVERY")
+                return True
+
+        if (
+            self.find_image("update_return_title", haystack=haystack)
+            and self.find_image("update_return_message", haystack=haystack)
+            and self.find_image("update_return_ok", haystack=haystack)
+        ):
+            logger.warning("GLOBAL: Update return-to-title prompt confirmed")
+            if self.smart_click("update_return_ok", "dismiss update return prompt", verify_key="update_return_message", haystack=haystack):
+                self.reset_quest_watchdog("update-return")
                 self.transition_to("RECOVERY")
                 return True
 
