@@ -4,6 +4,7 @@ import logging
 import math
 import os
 import random
+import re
 import subprocess
 import sys
 import time
@@ -93,7 +94,7 @@ class BotConfiguration:
     ROOM_ROW_BUCKET: int = 42
     ROOM_PRE_CLICK_RECHECK_GAP: float = 0.20
     JOIN_FAIL_LIST_GRACE: float = 3.2
-    MENU_TEMPLATE_MIN_Y_RATIO: float = 0.15
+    MENU_TEMPLATE_MIN_Y_RATIO: float = 0.05
     PREFER_BOTTOM_ROOMS: bool = True
 
     # All-Auto Strategy
@@ -1373,6 +1374,23 @@ class BBSBot:
                 if valid_wid: self.win_id = valid_wid
                 self._last_id_search = now
             if not self.win_id: raise GameWindowNotFoundError("Window ID not found")
+
+            xwin_res = subprocess.run(["xwininfo", "-id", self.win_id], capture_output=True, text=True)
+            if xwin_res.returncode == 0:
+                values = {}
+                for name, pattern in {
+                    "X": r"Absolute upper-left X:\s*(-?\d+)",
+                    "Y": r"Absolute upper-left Y:\s*(-?\d+)",
+                    "WIDTH": r"Width:\s*(\d+)",
+                    "HEIGHT": r"Height:\s*(\d+)",
+                }.items():
+                    match = re.search(pattern, xwin_res.stdout)
+                    if match:
+                        values[name] = int(match.group(1))
+                if values.get("WIDTH", 0) > 100 and values.get("HEIGHT", 0) > 100:
+                    self.region = (values["X"], values["Y"], values["WIDTH"], values["HEIGHT"])
+                    return self.region
+
             geo_res = subprocess.run(["xdotool", "getwindowgeometry", "--shell", self.win_id], capture_output=True, text=True)
             if geo_res.returncode != 0: 
                 self.win_id = None
