@@ -16,7 +16,7 @@ import mss  # type: ignore
 import pyautogui  # type: ignore
 import pyscreeze  # type: ignore
 from PIL import Image
-from Xlib import display, X, protocol  # type: ignore
+from Xlib import Xatom, display, X, protocol  # type: ignore
 
 # --- LOGGING SETUP ---
 logging.basicConfig(
@@ -327,6 +327,10 @@ class BBSBot:
         self._loop_restore_focus = None
         self._loop_restore_focus_at = 0.0
         self._game_visibility_dirty = True
+        self._x_time_display = None
+        self._x_time_offset = None
+        self._x_time_offset_at = None
+        self._user_time_cleared_for = None
         self._run_counted = False
         self.disconnect_retry_count = 0
         self.handlers = {
@@ -346,6 +350,12 @@ class BBSBot:
             self.sct = mss.mss()
         except Exception:
             logger.error("FATAL: X11/MSS Init Error"); sys.exit(1)
+        try:
+            self._x_time_display = display.Display()
+        except Exception as exc:
+            self._x_time_display = None
+            if self.config.ALIGNMENT_MODE:
+                logger.info(f"FOCUS: timestamp display init failed: {exc}")
         if not os.path.exists("alignment_audit"): os.makedirs("alignment_audit")
         elif self.config.ALIGNMENT_MODE:
             for f in os.listdir("alignment_audit"):
@@ -377,6 +387,8 @@ class BBSBot:
         for cmd in ["xdotool", "wmctrl", "pkill", "ps"]:
             if subprocess.run(["which", cmd], capture_output=True).returncode != 0:
                 logger.error(f"FATAL: Missing {cmd}"); sys.exit(1)
+        if subprocess.run(["which", "xwininfo"], capture_output=True).returncode != 0:
+            logger.warning("WARN: Missing xwininfo; falling back to less reliable xdotool geometry")
 
     @staticmethod
     def prune_old_files(directory, pattern, keep):
@@ -622,11 +634,16 @@ class BBSBot:
             return
         time.sleep(self.config.WAIT_REFOCUS)
         try:
-            subprocess.run(
-                ["xdotool", "windowfocus", cur_focus, "windowactivate", "--sync", cur_focus, "windowraise", cur_focus],
-                check=False,
-                stderr=subprocess.DEVNULL,
-            )
+            active = self.current_active_window()
+            restored = active == cur_focus
+            if not restored:
+                restored = self.activate_window_with_timestamp(cur_focus)
+            if not restored:
+                subprocess.run(
+                    ["xdotool", "windowfocus", cur_focus, "windowactivate", "--sync", cur_focus, "windowraise", cur_focus],
+                    check=False,
+                    stderr=subprocess.DEVNULL,
+                )
             if self.config.ALIGNMENT_MODE:
                 try:
                     active = subprocess.check_output(["xdotool", "getactivewindow"], text=True, stderr=subprocess.DEVNULL).strip()
@@ -636,6 +653,114 @@ class BBSBot:
             self._game_visibility_dirty = True
         except Exception:
             return
+
+    def activate_window_with_timestamp(self, window_id):
+        try:
+            timestamp = self.x_server_time()
+            if timestamp is None:
+                return False
+            wid = int(str(window_id), 0)
+            root = self.disp.screen().root
+            window = self.disp.create_resource_object("window", wid)
+            active_atom = self.disp.intern_atom("_NET_ACTIVE_WINDOW")
+            event = protocol.event.ClientMessage(
+                window=window,
+                client_type=active_atom,
+                data=(32, [2, timestamp, 0, 0, 0]),
+            )
+            root.send_event(event, event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+            window.configure(stack_mode=X.Above)
+            self.disp.flush()
+            self.disp.sync()
+            return True
+        except Exception as exc:
+            if self.config.ALIGNMENT_MODE:
+                logger.info(f"FOCUS: timestamped activation failed for {self.window_label(window_id)}: {exc}")
+            return False
+
+    def x_server_time(self):
+        now = time.monotonic()
+        if self._x_time_offset is not None and self._x_time_offset_at is not None and now - self._x_time_offset_at <= 300.0:
+            return (int(time.monotonic() * 1000) + self._x_time_offset) & 0xFFFFFFFF
+        if self._x_time_offset is None and self._x_time_offset_at is not None and now - self._x_time_offset_at <= 300.0:
+            return None
+        server_time = self.probe_x_server_time()
+        self._x_time_offset_at = now
+        if server_time is None:
+            return None
+        monotonic_ms = int(time.monotonic() * 1000)
+        self._x_time_offset = int(server_time) - monotonic_ms
+        return (int(time.monotonic() * 1000) + self._x_time_offset) & 0xFFFFFFFF
+
+    def probe_x_server_time(self):
+        if self._x_time_display is None:
+            return None
+        try:
+            ts_disp = self._x_time_display
+            root = ts_disp.screen().root
+            timestamp_atom = ts_disp.intern_atom("_BBS_BOT_TIMESTAMP")
+            root.change_attributes(event_mask=X.PropertyChangeMask)
+            ts_disp.sync()
+            while ts_disp.pending_events():
+                ts_disp.next_event()
+            root.change_property(
+                timestamp_atom,
+                Xatom.CARDINAL,
+                32,
+                [random.randint(1, 0x7FFFFFFF)],
+                X.PropModeReplace,
+            )
+            ts_disp.flush()
+            deadline = time.monotonic() + 0.25
+            while time.monotonic() < deadline:
+                ts_disp.sync()
+                while ts_disp.pending_events():
+                    event = ts_disp.next_event()
+                    if event.type == X.PropertyNotify and event.atom == timestamp_atom and event.time:
+                        return event.time
+                time.sleep(0.005)
+        except Exception as exc:
+            if self.config.ALIGNMENT_MODE:
+                logger.info(f"FOCUS: timestamp lookup failed: {exc}")
+        return None
+
+    def clear_stale_user_time(self):
+        if not self.win_id or self._user_time_cleared_for == self.win_id:
+            return
+        try:
+            ts = self.x_server_time()
+            if ts is None:
+                if self.config.ALIGNMENT_MODE:
+                    logger.info(f"FOCUS: stale _NET_WM_USER_TIME clear deferred for {self.window_label(self.win_id)}: no X timestamp")
+                return
+            win = self.disp.create_resource_object("window", int(self.win_id))
+            user_time_atom = self.disp.intern_atom("_NET_WM_USER_TIME")
+            user_time_window_atom = self.disp.intern_atom("_NET_WM_USER_TIME_WINDOW")
+            delegate_prop = win.get_full_property(user_time_window_atom, Xatom.WINDOW)
+            target = win
+            if delegate_prop and len(delegate_prop.value):
+                target = self.disp.create_resource_object("window", int(delegate_prop.value[0]))
+            cur = target.get_full_property(user_time_atom, Xatom.CARDINAL)
+            if cur and len(cur.value):
+                old = int(cur.value[0]) & 0xFFFFFFFF
+            else:
+                old = None
+            if old is not None and old != ts and (self.x_timestamp_after(old, ts) or old > ts):
+                target.change_property(user_time_atom, Xatom.CARDINAL, 32, [ts], X.PropModeReplace)
+                self.disp.flush()
+                logger.warning(f"FOCUS: cleared stale _NET_WM_USER_TIME {old} -> {ts}")
+            self._user_time_cleared_for = self.win_id
+        except Exception as exc:
+            if self.config.ALIGNMENT_MODE:
+                logger.info(f"FOCUS: stale _NET_WM_USER_TIME check failed: {exc}")
+
+    @staticmethod
+    def x_timestamp_after(candidate, reference):
+        return ((int(candidate) - int(reference)) & 0xFFFFFFFF) < 0x80000000 and int(candidate) != int(reference)
+
+    @staticmethod
+    def monotonic_x_timestamp_fallback():
+        return int(time.monotonic() * 1000) & 0xFFFFFFFF
 
     def capture_loop_focus(self):
         self._loop_restore_focus = None
@@ -725,6 +850,9 @@ class BBSBot:
             window = self.disp.create_resource_object("window", int(self.win_id))
             # V2 Accuracy: Use physical screen region offset to bypass OS titlebar scaling
             rel_x, rel_y = x - self.region[0], y - self.region[1]
+            event_time = self.x_server_time()
+            if event_time is None:
+                event_time = self.monotonic_x_timestamp_fallback()
             details = {
                 "root": self.disp.screen().root,
                 "window": window,
@@ -736,7 +864,7 @@ class BBSBot:
                 "event_y": rel_y,
                 "state": 0,
                 "detail": 1,
-                "time": int(time.time() * 1000) & 0xFFFFFFFF,
+                "time": event_time,
             }
             window.send_event(protocol.event.ButtonPress(**details), propagate=True)
             window.send_event(protocol.event.ButtonRelease(**details), propagate=True)
@@ -1374,9 +1502,15 @@ class BBSBot:
                 if valid_wid: self.win_id = valid_wid
                 self._last_id_search = now
             if not self.win_id: raise GameWindowNotFoundError("Window ID not found")
+            self.clear_stale_user_time()
 
-            xwin_res = subprocess.run(["xwininfo", "-id", self.win_id], capture_output=True, text=True)
-            if xwin_res.returncode == 0:
+            try:
+                xwin_res = subprocess.run(["xwininfo", "-id", self.win_id], capture_output=True, text=True)
+            except FileNotFoundError:
+                xwin_res = None
+                if self.config.ALIGNMENT_MODE:
+                    logger.info("WINDOW: xwininfo missing; using xdotool geometry fallback")
+            if xwin_res and xwin_res.returncode == 0:
                 values = {}
                 for name, pattern in {
                     "X": r"Absolute upper-left X:\s*(-?\d+)",
