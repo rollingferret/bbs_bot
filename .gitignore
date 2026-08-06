@@ -26,6 +26,7 @@ CLAUDE.md
 
 # Logs
 *.log
+*.log.*
 
 # Screenshots
 screenshots/
@@ -33,6 +34,11 @@ alignment_audit/
 error_snapshots/
 diagnostics/
 traces/
+error_*.png
+restart_*.png
+pre_click_*.png
+lost_in_recovery_*.png
+to_*.png
 
 # Telemetry
 agent_telemetry/
